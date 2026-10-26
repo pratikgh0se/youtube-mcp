@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "youtube-mcp": {
+        "type": "local",
+        "command": ["youtube-mcp", "--transport", "stdio"],
+        "environment": {
+          "YOUTUBE_API_KEY": "{env:YOUTUBE_API_KEY}",
+          "YOUTUBE_MCP_CHANNEL_ID": "{env:YOUTUBE_MCP_CHANNEL_ID}",
+          "YOUTUBE_MCP_PROFILE_ID": "{env:YOUTUBE_MCP_PROFILE_ID}",
+          "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": "{env:YOUTUBE_OAUTH_CLIENT_SECRET_FILE}",
+          "YOUTUBE_MCP_STATE_DIR": "{env:YOUTUBE_MCP_STATE_DIR}"
+        }
+      }
+    }
+  }
+}

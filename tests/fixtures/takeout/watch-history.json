@@ -1,0 +1,31 @@
+[
+  {
+    "title": "Watched Refactoring a TypeScript service",
+    "titleUrl": "https://www.youtube.com/watch?v=video-jan-1",
+    "time": "2026-01-05T10:00:00.000Z",
+    "subtitles": [{ "name": "Code Channel", "url": "https://www.youtube.com/channel/c1" }],
+    "details": [{ "name": "From Google Search" }]
+  },
+  {
+    "title": "Watched Writing reliable tests",
+    "titleUrl": "https://www.youtube.com/watch?v=video-jan-2",
+    "time": "2026-01-06T11:00:00.000Z",
+    "subtitles": [{ "name": "Code Channel", "url": "https://www.youtube.com/channel/c1" }],
+    "details": [{ "name": "Viewed on another device" }]
+  },
+  {
+    "title": "Watched Building a compiler",
+    "titleUrl": "https://www.youtube.com/watch?v=video-feb-1",
+    "time": "2026-02-03T09:00:00.000Z",
+    "subtitles": [{ "name": "Language Lab", "url": "https://www.youtube.com/channel/c2" }],
+    "details": [{ "name": "From Google Search" }]
+  },
+  {
+    "title": "Searched for TypeScript tutorials",
+    "time": "2026-02-03T08:00:00.000Z"
+  },
+  {
+    "title": "Searched for Node compiler performance",
+    "time": "2026-02-05T08:00:00.000Z"
+  }
+]

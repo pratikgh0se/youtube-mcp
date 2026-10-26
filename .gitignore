@@ -1,0 +1,11 @@
+.superpowers/
+.worktrees/
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+secret.json
+.DS_Store
+/.yt-mcp/

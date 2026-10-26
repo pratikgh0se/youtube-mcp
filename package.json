@@ -1,0 +1,49 @@
+{
+  "name": "youtube-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "youtube-mcp": "./bin/youtube-mcp.mjs"
+  },
+  "files": [
+    ".env.example",
+    "bin",
+    "configs",
+    "docs/CHANGELOG.md",
+    "docs/README.md",
+    "dist",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "auth": "node dist/index.js youtube-auth",
+    "dev:stdio": "tsx src/index.ts --transport stdio",
+    "dev:http": "tsx src/index.ts --transport http",
+    "prepack": "npm run build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "smoke:private-playlist": "node scripts/private-playlist-smoke.mjs",
+    "smoke:read-only": "node scripts/read-only-smoke.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "better-sqlite3": "^12.6.2",
+    "googleapis": "^171.4.0",
+    "youtube-transcript": "^1.2.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}
