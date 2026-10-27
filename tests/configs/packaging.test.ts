@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 // ---------------------------------------------------------------------------
 // Canonical launch: change here (e.g. to pin a tag) and every check follows.
 // ---------------------------------------------------------------------------
-const CANONICAL_LAUNCH: readonly string[] = ['npx', '-y', 'github:pratikgh0se/youtube-mcp', '--transport', 'stdio'];
-const NPX_TARGET = 'github:pratikgh0se/youtube-mcp';
+const CANONICAL_LAUNCH: readonly string[] = ['npx', '-y', 'github:pratikgh0se/youtube-mcp#v0.2.0', '--transport', 'stdio'];
+const NPX_TARGET = 'github:pratikgh0se/youtube-mcp#v0.2.0';
 const SERVER_NAME = 'youtube-mcp';
 const BIN_PATH = './bin/youtube-mcp.mjs';
 const ENV_NAMES = [
@@ -444,6 +444,10 @@ describe('C4 versions and names', () => {
     expect(readJson('mcpb/manifest.json').version, 'mcpb/manifest.json version').toBe(version);
   });
 
+  it('the npx pin ref equals v + package.json version', () => {
+    expect(NPX_TARGET.split('#')[1]).toBe(`v${readJson('package.json').version as string}`);
+  });
+
   it('all names are youtube-mcp and marketplace source is "./"', () => {
     const marketplace = readJson('.claude-plugin/marketplace.json').plugins as Obj[];
     expect(readJson('.claude-plugin/plugin.json').name, '.claude-plugin/plugin.json name').toBe(SERVER_NAME);
@@ -546,7 +550,7 @@ describe('C5 install links', () => {
 
   it.each(['README.md', 'AGENTS.md', 'llms-install.md'])('%s npx invocations use the github: package', (file) => {
     if (!existsSync(file)) return;
-    const hits = readText(file).match(/\bnpx\s[^\n"'`]*?youtube-mcp/g) ?? [];
+    const hits = readText(file).match(/\bnpx\s[^\n"'`]*?youtube-mcp(?:#[^\s"'`]*)?/g) ?? [];
     for (const hit of hits) expect(hit, `${file}: npx invocation "${hit}"`).toContain(NPX_TARGET);
   });
 

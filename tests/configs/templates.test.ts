@@ -22,7 +22,7 @@ describe('loadClientTemplate', () => {
   ])('%s resolves to the canonical npx launch contract', async (name) => {
     const template = await loadClientTemplate(`configs/${name}`);
     expect(template.command).toBe('npx');
-    expect(template.args).toEqual(['-y', 'github:pratikgh0se/youtube-mcp', '--transport', 'stdio']);
+    expect(template.args).toEqual(['-y', 'github:pratikgh0se/youtube-mcp#v0.2.0', '--transport', 'stdio']);
     // Configs declare only the env they need; every key must be one of the five supported names.
     for (const key of template.envKeys) expect(ALLOWED_ENV_KEYS).toContain(key);
   });
