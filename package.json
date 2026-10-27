@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "private": true,
   "license": "MIT",
+  "author": {
+    "name": "Pratik Ghose",
+    "url": "https://github.com/pratikgh0se"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pratikgh0se/youtube-mcp.git"
