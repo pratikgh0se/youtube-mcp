@@ -1,0 +1,25 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "youtube-api-key",
+      "description": "YouTube Data API v3 key",
+      "password": true
+    }
+  ],
+  "servers": {
+    "youtube-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:pratikgh0se/youtube-mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "YOUTUBE_API_KEY": "${input:youtube-api-key}"
+      }
+    }
+  }
+}

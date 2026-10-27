@@ -58,23 +58,32 @@ Full details are in [docs/README.md](docs/README.md).
 - A Google Cloud project with the **YouTube Data API v3** enabled (and the **YouTube Analytics API** for the creator analytics tools)
 - A YouTube Data API key for public reads, and an OAuth desktop client for account and creator tools
 
-## Install
+## Install in your AI agent
 
-Every install path below runs the server straight from GitHub with `npx -y github:pratikgh0se/youtube-mcp`, so there is nothing to publish or download first. You need Node.js 22+ on your `PATH`. The first launch clones the repo, installs dependencies and builds it from source, so it takes about a minute. Later launches use npm's cache.
+No npm publish is needed. Every route below runs the server straight from GitHub with `npx -y github:pratikgh0se/youtube-mcp --transport stdio`, except the Claude Desktop bundle, which carries its own copy. You need Node.js 22+ on your `PATH` for the `npx` routes. Create your Google credentials first (see [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
 
-Create your Google credentials first (see [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
-
-| Client | How to install |
+| Agent | One-line install |
 | --- | --- |
 | [Claude Code](#claude-code) | `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp` |
-| [Claude Desktop](#claude-desktop) | Add an `npx` block to `claude_desktop_config.json` |
-| [Codex](#codex) | `codex mcp add ...` or a block in `~/.codex/config.toml` |
+| [Claude Desktop](#claude-desktop) | Download the `.mcpb` from [Releases](https://github.com/pratikgh0se/youtube-mcp/releases/latest) and double-click it |
+| [Codex CLI](#codex-cli) | `codex mcp add youtube-mcp -- npx -y github:pratikgh0se/youtube-mcp --transport stdio` |
 | [Gemini CLI](#gemini-cli) | `gemini extensions install https://github.com/pratikgh0se/youtube-mcp` |
-| [Cursor](#cursor) | Deeplink, or `.cursor/mcp.json` |
-| [VS Code](#vs-code) | Install link, or `.vscode/mcp.json` |
-| [Other clients](#other-clients) | Windsurf, Cline, Zed, Goose: the generic `npx` JSON |
+| [Antigravity CLI](#antigravity-cli) | Add the server to `~/.gemini/config/mcp_config.json` |
+| [Cursor](#cursor) | Install button, or `.cursor/mcp.json` |
+| [VS Code / Copilot](#vs-code--copilot) | Install button, or `.vscode/mcp.json` |
+| [Windsurf](#windsurf) | Add the server to `mcp_config.json` |
+| [Cline](#cline) | Add the server to `cline_mcp_settings.json`, or point Cline at [`llms-install.md`](llms-install.md) |
+| [Zed](#zed) | Add a `context_servers` entry |
+| [goose](#goose) | `goose configure`, or `config.yaml` |
+| [Other agents](#other-agents) | See [`AGENTS.md`](AGENTS.md) and [`configs/generic-stdio.json`](configs/generic-stdio.json) |
 
-Use placeholders as shown and never paste a real key into a file you commit.
+Ready-made files for each client are in [`configs/`](configs). Use the placeholders as shown and never paste a real key into a file you commit.
+
+The first launch clones the repo, installs dependencies and builds it from source, so it takes about a minute (longer on a slow network). Later launches use npm's cache. To avoid a client start-up timeout, warm the cache once in a terminal first:
+
+```bash
+npx -y github:pratikgh0se/youtube-mcp --version
+```
 
 ### Claude Code
 
@@ -83,11 +92,13 @@ claude plugin marketplace add pratikgh0se/youtube-mcp
 claude plugin install youtube-mcp@youtube-mcp
 ```
 
-Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp`. On Claude Code 2.1.275 or later one step also works: `/plugin install youtube-mcp --marketplace pratikgh0se/youtube-mcp`. Claude Code asks for your API key (stored in your OS credential store) and the optional creator settings when you enable the plugin. The plugin only holds config. The server itself still runs through `npx`.
+Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp`. Claude Code asks for your API key (stored in your OS credential store) and the optional creator settings (OAuth client file, profile name, channel ID, state directory). Leave optional ones blank to skip them. The plugin only holds config. The server itself still runs through `npx`.
 
 ### Claude Desktop
 
-Add this to `claude_desktop_config.json`, then restart Claude Desktop. The first start can take about a minute.
+Download `youtube-mcp-<version>-<platform>-<arch>.mcpb` from [GitHub Releases](https://github.com/pratikgh0se/youtube-mcp/releases/latest) and double-click it. Claude Desktop shows an install dialog and asks for your API key. The bundle includes the server, so it needs no `npx` at run time. The macOS Apple Silicon build comes first. Other platforms are produced by the CI release builds.
+
+Fallback if there is no bundle for your platform: add [`configs/claude-desktop.json`](configs/claude-desktop.json) to `claude_desktop_config.json` and restart. The first start can take about a minute.
 
 ```json
 {
@@ -95,31 +106,26 @@ Add this to `claude_desktop_config.json`, then restart Claude Desktop. The first
     "youtube-mcp": {
       "command": "npx",
       "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
-      "env": {
-        "YOUTUBE_API_KEY": "your-api-key"
-      }
+      "env": { "YOUTUBE_API_KEY": "<your-youtube-api-key>" }
     }
   }
 }
 ```
 
-### Codex
+### Codex CLI
 
 ```bash
-codex mcp add youtube-mcp --env YOUTUBE_API_KEY=your-api-key -- npx -y github:pratikgh0se/youtube-mcp --transport stdio
+codex mcp add youtube-mcp --env YOUTUBE_API_KEY=<your-youtube-api-key> -- npx -y github:pratikgh0se/youtube-mcp --transport stdio
 ```
 
-Or put this in `~/.codex/config.toml`. `startup_timeout_sec` matters, because the default of 10 seconds is shorter than the first `npx` run. `env_vars` forwards the key from your shell, so it stays out of the file.
+That stores the key in `~/.codex/config.toml`. To keep it out of the file, use [`configs/codex.toml`](configs/codex.toml) instead. It forwards the variables from your shell with `env_vars` (Codex does not expand `${VAR}`) and sets `startup_timeout_sec = 180`, because the default of 10 seconds is shorter than the first `npx` run.
 
 ```toml
 [mcp_servers.youtube-mcp]
 command = "npx"
 args = ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"]
-env_vars = ["YOUTUBE_API_KEY", "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"]
-startup_timeout_sec = 60
-
-[mcp_servers.youtube-mcp.env]
-YOUTUBE_MCP_PROFILE_ID = "creator-main"
+env_vars = ["YOUTUBE_API_KEY"]
+startup_timeout_sec = 180
 ```
 
 ### Gemini CLI
@@ -128,11 +134,13 @@ YOUTUBE_MCP_PROFILE_ID = "creator-main"
 gemini extensions install https://github.com/pratikgh0se/youtube-mcp
 ```
 
-Gemini prompts for your API key (kept in the system keychain) and the optional creator settings. Change them later with `gemini extensions config youtube-mcp`.
+Gemini prompts for your API key (kept in the system keychain) and the optional creator settings. Change them later with `gemini extensions config youtube-mcp`. A plain `settings.json` entry is in [`configs/gemini-settings.json`](configs/gemini-settings.json).
 
-### Cursor
+Note: Google stopped serving Gemini CLI to AI Pro, Ultra and free individual users on 2026-06-18. Paid API-key and enterprise users keep it ([source](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)). Everyone else should use Antigravity CLI below.
 
-[Install in Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=youtube-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdpdGh1YjpwcmF0aWtnaDBzZS95b3V0dWJlLW1jcCIsIi0tdHJhbnNwb3J0Iiwic3RkaW8iXSwiZW52Ijp7IllPVVRVQkVfQVBJX0tFWSI6IiR7ZW52OllPVVRVQkVfQVBJX0tFWX0ifX0=) (the link reads `YOUTUBE_API_KEY` from your shell environment). Or add this to `.cursor/mcp.json` (or `~/.cursor/mcp.json`):
+### Antigravity CLI
+
+Add this to `~/.gemini/config/mcp_config.json` (global) or `<workspace>/.agents/mcp_config.json`. It is also in [`configs/antigravity.json`](configs/antigravity.json).
 
 ```json
 {
@@ -140,55 +148,69 @@ Gemini prompts for your API key (kept in the system keychain) and the optional c
     "youtube-mcp": {
       "command": "npx",
       "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
-      "env": {
-        "YOUTUBE_API_KEY": "${env:YOUTUBE_API_KEY}"
-      }
+      "env": { "YOUTUBE_API_KEY": "<your-youtube-api-key>" }
     }
   }
 }
 ```
 
-### VS Code
+### Cursor
 
-[Install in VS Code](vscode:mcp/install?%7B%22name%22%3A%22youtube-mcp%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22github%3Apratikgh0se%2Fyoutube-mcp%22%2C%22--transport%22%2C%22stdio%22%5D%2C%22env%22%3A%7B%22YOUTUBE_API_KEY%22%3A%22%24%7Benv%3AYOUTUBE_API_KEY%7D%22%7D%7D) (reads `YOUTUBE_API_KEY` from your environment). Or add this to `.vscode/mcp.json`. VS Code prompts for the key on first start and stores it securely.
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=youtube-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdpdGh1YjpwcmF0aWtnaDBzZS95b3V0dWJlLW1jcCIsIi0tdHJhbnNwb3J0Iiwic3RkaW8iXSwiZW52Ijp7IllPVVRVQkVfQVBJX0tFWSI6IiR7ZW52OllPVVRVQkVfQVBJX0tFWX0ifX0=)
+
+The button reads `YOUTUBE_API_KEY` from your shell environment. Or add [`configs/cursor.json`](configs/cursor.json) to `.cursor/mcp.json` (or `~/.cursor/mcp.json`). It uses `${env:YOUTUBE_API_KEY}`, so no secret is written to the file.
+
+### VS Code / Copilot
+
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?logo=visualstudiocode)](https://vscode.dev/redirect/mcp/install?name=youtube-mcp&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22github%3Apratikgh0se%2Fyoutube-mcp%22%2C%22--transport%22%2C%22stdio%22%5D%7D)
+
+The button installs the server without a key. Add one afterwards through the server's `env`, or use the file below, which prompts for it. From a terminal:
+
+```bash
+code --add-mcp '{"name":"youtube-mcp","type":"stdio","command":"npx","args":["-y","github:pratikgh0se/youtube-mcp","--transport","stdio"]}'
+```
+
+Or save [`configs/vscode.json`](configs/vscode.json) as `.vscode/mcp.json`. VS Code asks for the key on first start (`password: true`) and stores it securely.
 
 ```json
 {
   "inputs": [
-    { "type": "promptString", "id": "ytkey", "description": "YouTube API key", "password": true }
+    { "type": "promptString", "id": "youtube-api-key", "description": "YouTube Data API v3 key", "password": true }
   ],
   "servers": {
     "youtube-mcp": {
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
-      "env": {
-        "YOUTUBE_API_KEY": "${input:ytkey}"
-      }
+      "env": { "YOUTUBE_API_KEY": "${input:youtube-api-key}" }
     }
   }
 }
 ```
 
-### Other clients
+### Windsurf
 
-For Windsurf, Cline, Zed, Goose and anything else that launches stdio MCP servers, use this command, args and env in your client's own config format (usually a `mcpServers` map):
+Use [`configs/windsurf.json`](configs/windsurf.json) (it reads `${env:YOUTUBE_API_KEY}`). The current Devin docs put the file at `~/.config/devin/mcp_config.json` (Windows: `%APPDATA%\devin\mcp_config.json`). The older path `~/.codeium/windsurf/mcp_config.json` is what many guides still show. Only the first is confirmed by the vendor's docs, so if one does not load, try the other.
 
-```json
-{
-  "mcpServers": {
-    "youtube-mcp": {
-      "command": "npx",
-      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
-      "env": {
-        "YOUTUBE_API_KEY": "your-api-key"
-      }
-    }
-  }
-}
+### Cline
+
+Open the MCP Servers panel, Configure, then "Configure MCP Servers", and add [`configs/cline.json`](configs/cline.json). For Cline CLI the file is `~/.cline/data/settings/cline_mcp_settings.json`. Cline does not document env interpolation, so the key goes in as a literal value in that file. You can also ask Cline to install it from [`llms-install.md`](llms-install.md).
+
+### Zed
+
+Add [`configs/zed.json`](configs/zed.json) to your Zed settings (run the `zed: open settings file` action). Zed calls the map `context_servers`. The key goes in as a literal value.
+
+### goose
+
+Run `goose configure`, choose Add Extension, then Command-Line Extension, and enter `npx -y github:pratikgh0se/youtube-mcp --transport stdio` with the key as an environment variable. Or add [`configs/goose.yaml`](configs/goose.yaml) to `~/.config/goose/config.yaml`. The deeplink form (paste it into a browser or `open`) sets only the command, so add the key afterwards:
+
+```text
+goose://extension?cmd=npx&arg=-y&arg=github%3Apratikgh0se%2Fyoutube-mcp&arg=--transport&arg=stdio&id=youtube-mcp&name=YouTube%20MCP&description=Search%20YouTube%20and%20manage%20your%20channel%20with%20approval%20for%20every%20change
 ```
 
-Zed calls the map `context_servers`. Goose takes the same command in its `extensions:` list.
+### Other agents
+
+Any client that launches stdio MCP servers can use [`configs/generic-stdio.json`](configs/generic-stdio.json). Templates for OpenCode, OpenClaw and Hermes are in [`configs/`](configs) too. Agents installing this for a user should read [`AGENTS.md`](AGENTS.md).
 
 ### Account and creator tools: authorize once
 
@@ -214,7 +236,7 @@ In the [Google Cloud console](https://console.cloud.google.com/):
 
 ### 2. Set environment variables
 
-Put these in your client config (see [Install](#install)), or copy `.env.example` to `.env` (it is git-ignored) when running from a checkout. Never commit real values.
+Put these in your client config (see [Install in your AI agent](#install-in-your-ai-agent)), or copy `.env.example` to `.env` (it is git-ignored) when running from a checkout. Never commit real values.
 
 | Variable | Needed for | Meaning |
 | --- | --- | --- |
@@ -255,7 +277,7 @@ Point your client at the checkout with an absolute path:
 }
 ```
 
-More templates (Codex, Cursor, OpenClaw, Hermes, OpenCode, generic stdio) are in [`configs/`](configs). They launch the `youtube-mcp` command, so they assume it is on your `PATH`. Otherwise change the command to `node` with the path above.
+More templates (one per client) are in [`configs/`](configs). They launch the server with `npx -y github:pratikgh0se/youtube-mcp --transport stdio`. To use your checkout instead, change the command to `node` with the path above.
 
 ### Optional: local HTTP
 

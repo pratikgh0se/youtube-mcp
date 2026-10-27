@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { OAuthService } from './auth/oauth.js';
 import { loadConfig, loadProjectEnvFile } from './config.js';
@@ -27,6 +28,12 @@ import { ModerationService, createModerationProvider } from './youtube/moderatio
 import type { AppConfig } from './types.js';
 
 async function main(arguments_: string[]): Promise<void> {
+  if (arguments_[0] === '--version') {
+    const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
+    process.stdout.write(`${manifest.version}\n`);
+    return;
+  }
+
   loadProjectEnvFile(process.cwd());
   const config = loadConfig(process.env, homedir());
   const oauth = new OAuthService(config);
