@@ -1,0 +1,11 @@
+# Add under `extensions:` in ~/.config/goose/config.yaml
+extensions:
+  youtube-mcp:
+    type: stdio
+    name: youtube-mcp
+    enabled: true
+    cmd: npx
+    args: ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"]
+    envs:
+      YOUTUBE_API_KEY: "<your-youtube-api-key>"
+    timeout: 300

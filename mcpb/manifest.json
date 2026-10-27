@@ -1,0 +1,70 @@
+{
+  "manifest_version": "0.3",
+  "name": "youtube-mcp",
+  "display_name": "YouTube MCP",
+  "version": "0.2.0",
+  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Every change to your account is previewed and needs your approval first.",
+  "author": {
+    "name": "Pratik Ghose",
+    "url": "https://github.com/pratikgh0se"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pratikgh0se/youtube-mcp"
+  },
+  "homepage": "https://github.com/pratikgh0se/youtube-mcp",
+  "license": "MIT",
+  "keywords": ["youtube", "mcp", "creator", "analytics"],
+  "server": {
+    "type": "node",
+    "entry_point": "bin/youtube-mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/bin/youtube-mcp.mjs", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "${user_config.youtube_api_key}",
+        "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": "${user_config.youtube_oauth_client_secret_file}",
+        "YOUTUBE_MCP_PROFILE_ID": "${user_config.youtube_mcp_profile_id}",
+        "YOUTUBE_MCP_CHANNEL_ID": "${user_config.youtube_mcp_channel_id}",
+        "YOUTUBE_MCP_STATE_DIR": "${user_config.youtube_mcp_state_dir}"
+      }
+    }
+  },
+  "user_config": {
+    "youtube_api_key": {
+      "type": "string",
+      "title": "YouTube Data API key",
+      "description": "Your YouTube Data API v3 key. Enough for the public search, video, channel, comment and transcript tools.",
+      "sensitive": true,
+      "required": true
+    },
+    "youtube_oauth_client_secret_file": {
+      "type": "file",
+      "title": "OAuth client JSON file (optional)",
+      "description": "Desktop OAuth client JSON from Google Cloud. Only needed for account and creator tools. Leave empty for public tools only.",
+      "required": false
+    },
+    "youtube_mcp_profile_id": {
+      "type": "string",
+      "title": "Profile name (optional)",
+      "description": "A name you choose, for example creator-main. Keeps local state separate per profile. Only needed for creator tools.",
+      "required": false
+    },
+    "youtube_mcp_channel_id": {
+      "type": "string",
+      "title": "Channel ID (optional)",
+      "description": "Your YouTube channel ID, starting with UC. The signed-in Google account must own it. Only needed for creator tools.",
+      "required": false
+    },
+    "youtube_mcp_state_dir": {
+      "type": "directory",
+      "title": "State directory (optional)",
+      "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": { "node": ">=22.0.0" }
+  }
+}

@@ -32,3 +32,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - docs: support open-source MCP harnesses
 - docs: define cross-client MCP support
 - docs: define YouTube MCP design
+
+## [0.2.0]
+
+### Added
+- one-line install for Claude Code (plugin and marketplace), Claude Desktop (`.mcpb` bundle), Gemini CLI (extension), Cursor and VS Code (install links)
+- ready-made configs for 14 clients in `configs/`, all using `npx -y github:pratikgh0se/youtube-mcp --transport stdio`
+- `AGENTS.md` and `llms-install.md` so agents can install the server for a user
+- `--version` flag, used to prewarm the first `npx` run
+- the state directory is now a setting in the Claude Code plugin and Gemini extension
+
+### Changed
+- README install section reorganised as "Install in your AI agent"
+- empty optional settings (blank values from plugin and extension hosts) count as unset

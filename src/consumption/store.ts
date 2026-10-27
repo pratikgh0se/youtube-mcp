@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import Database from 'better-sqlite3';
+import { openDatabase } from '../sqlite/open-database.js';
 
 import { AppError } from '../errors.js';
 
@@ -81,7 +82,7 @@ export class ConsumptionStore {
         chmodSync(stateDirectory, 0o700);
       }
 
-      this.database = new Database(this.databasePath);
+      this.database = openDatabase(this.databasePath);
       if (this.databasePath !== ':memory:' && existsSync(this.databasePath)) {
         chmodSync(this.databasePath, 0o600);
       }
