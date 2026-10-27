@@ -1,6 +1,6 @@
 {
   "name": "youtube-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -32,6 +32,7 @@
     "auth": "node dist/index.js youtube-auth",
     "dev:stdio": "tsx src/index.ts --transport stdio",
     "dev:http": "tsx src/index.ts --transport http",
+    "prepare": "npm run build",
     "prepack": "npm run build",
     "lint": "tsc --noEmit -p tsconfig.json",
     "smoke:private-playlist": "node scripts/private-playlist-smoke.mjs",

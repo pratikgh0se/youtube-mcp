@@ -1,0 +1,18 @@
+{
+  "name": "youtube-mcp",
+  "owner": {
+    "name": "pratikgh0se",
+    "url": "https://github.com/pratikgh0se"
+  },
+  "description": "YouTube MCP: search YouTube and manage your channel from your AI assistant.",
+  "plugins": [
+    {
+      "name": "youtube-mcp",
+      "source": "./",
+      "version": "0.2.0",
+      "description": "Search YouTube, manage your channel and read your analytics. Every change to your account is previewed and needs your approval first.",
+      "homepage": "https://github.com/pratikgh0se/youtube-mcp",
+      "license": "MIT"
+    }
+  ]
+}

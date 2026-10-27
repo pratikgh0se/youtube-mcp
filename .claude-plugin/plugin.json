@@ -1,0 +1,38 @@
+{
+  "name": "youtube-mcp",
+  "displayName": "YouTube MCP",
+  "version": "0.2.0",
+  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Every change to your account is previewed and needs your approval first.",
+  "author": {
+    "name": "Pratik Ghose",
+    "url": "https://github.com/pratikgh0se"
+  },
+  "homepage": "https://github.com/pratikgh0se/youtube-mcp",
+  "repository": "https://github.com/pratikgh0se/youtube-mcp",
+  "license": "MIT",
+  "keywords": ["youtube", "mcp", "creator", "analytics"],
+  "userConfig": {
+    "YOUTUBE_API_KEY": {
+      "type": "string",
+      "title": "YouTube Data API key",
+      "description": "Your YouTube Data API v3 key. Enough for the public search, video, channel, comment and transcript tools.",
+      "sensitive": true,
+      "required": true
+    },
+    "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": {
+      "type": "file",
+      "title": "OAuth client JSON file (optional)",
+      "description": "Desktop OAuth client JSON from Google Cloud. Only needed for account and creator tools. Leave empty for public tools only."
+    },
+    "YOUTUBE_MCP_PROFILE_ID": {
+      "type": "string",
+      "title": "Profile name (optional)",
+      "description": "A name you choose, for example creator-main. Keeps local state separate per profile. Only needed for creator tools."
+    },
+    "YOUTUBE_MCP_CHANNEL_ID": {
+      "type": "string",
+      "title": "Channel ID (optional)",
+      "description": "Your YouTube channel ID, starting with UC. The signed-in Google account must own it. Only needed for creator tools."
+    }
+  }
+}

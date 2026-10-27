@@ -58,18 +58,153 @@ Full details are in [docs/README.md](docs/README.md).
 - A Google Cloud project with the **YouTube Data API v3** enabled (and the **YouTube Analytics API** for the creator analytics tools)
 - A YouTube Data API key for public reads, and an OAuth desktop client for account and creator tools
 
-## Setup
+## Install
 
-### 1. Install and build
+Every install path below runs the server straight from GitHub with `npx -y github:pratikgh0se/youtube-mcp`, so there is nothing to publish or download first. You need Node.js 22+ on your `PATH`. The first launch clones the repo, installs dependencies and builds it from source, so it takes about a minute. Later launches use npm's cache.
+
+Create your Google credentials first (see [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
+
+| Client | How to install |
+| --- | --- |
+| [Claude Code](#claude-code) | `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp` |
+| [Claude Desktop](#claude-desktop) | Add an `npx` block to `claude_desktop_config.json` |
+| [Codex](#codex) | `codex mcp add ...` or a block in `~/.codex/config.toml` |
+| [Gemini CLI](#gemini-cli) | `gemini extensions install https://github.com/pratikgh0se/youtube-mcp` |
+| [Cursor](#cursor) | Deeplink, or `.cursor/mcp.json` |
+| [VS Code](#vs-code) | Install link, or `.vscode/mcp.json` |
+| [Other clients](#other-clients) | Windsurf, Cline, Zed, Goose: the generic `npx` JSON |
+
+Use placeholders as shown and never paste a real key into a file you commit.
+
+### Claude Code
 
 ```bash
-git clone https://github.com/pratikgh0se/youtube-mcp.git
-cd youtube-mcp
-npm ci
-npm run build
+claude plugin marketplace add pratikgh0se/youtube-mcp
+claude plugin install youtube-mcp@youtube-mcp
 ```
 
-### 2. Create Google credentials
+Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp`. On Claude Code 2.1.275 or later one step also works: `/plugin install youtube-mcp --marketplace pratikgh0se/youtube-mcp`. Claude Code asks for your API key (stored in your OS credential store) and the optional creator settings when you enable the plugin. The plugin only holds config. The server itself still runs through `npx`.
+
+### Claude Desktop
+
+Add this to `claude_desktop_config.json`, then restart Claude Desktop. The first start can take about a minute.
+
+```json
+{
+  "mcpServers": {
+    "youtube-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+```bash
+codex mcp add youtube-mcp --env YOUTUBE_API_KEY=your-api-key -- npx -y github:pratikgh0se/youtube-mcp --transport stdio
+```
+
+Or put this in `~/.codex/config.toml`. `startup_timeout_sec` matters, because the default of 10 seconds is shorter than the first `npx` run. `env_vars` forwards the key from your shell, so it stays out of the file.
+
+```toml
+[mcp_servers.youtube-mcp]
+command = "npx"
+args = ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"]
+env_vars = ["YOUTUBE_API_KEY", "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"]
+startup_timeout_sec = 60
+
+[mcp_servers.youtube-mcp.env]
+YOUTUBE_MCP_PROFILE_ID = "creator-main"
+```
+
+### Gemini CLI
+
+```bash
+gemini extensions install https://github.com/pratikgh0se/youtube-mcp
+```
+
+Gemini prompts for your API key (kept in the system keychain) and the optional creator settings. Change them later with `gemini extensions config youtube-mcp`.
+
+### Cursor
+
+[Install in Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=youtube-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdpdGh1YjpwcmF0aWtnaDBzZS95b3V0dWJlLW1jcCIsIi0tdHJhbnNwb3J0Iiwic3RkaW8iXSwiZW52Ijp7IllPVVRVQkVfQVBJX0tFWSI6IiR7ZW52OllPVVRVQkVfQVBJX0tFWX0ifX0=) (the link reads `YOUTUBE_API_KEY` from your shell environment). Or add this to `.cursor/mcp.json` (or `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "youtube-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "${env:YOUTUBE_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### VS Code
+
+[Install in VS Code](vscode:mcp/install?%7B%22name%22%3A%22youtube-mcp%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22github%3Apratikgh0se%2Fyoutube-mcp%22%2C%22--transport%22%2C%22stdio%22%5D%2C%22env%22%3A%7B%22YOUTUBE_API_KEY%22%3A%22%24%7Benv%3AYOUTUBE_API_KEY%7D%22%7D%7D) (reads `YOUTUBE_API_KEY` from your environment). Or add this to `.vscode/mcp.json`. VS Code prompts for the key on first start and stores it securely.
+
+```json
+{
+  "inputs": [
+    { "type": "promptString", "id": "ytkey", "description": "YouTube API key", "password": true }
+  ],
+  "servers": {
+    "youtube-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "${input:ytkey}"
+      }
+    }
+  }
+}
+```
+
+### Other clients
+
+For Windsurf, Cline, Zed, Goose and anything else that launches stdio MCP servers, use this command, args and env in your client's own config format (usually a `mcpServers` map):
+
+```json
+{
+  "mcpServers": {
+    "youtube-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+Zed calls the map `context_servers`. Goose takes the same command in its `extensions:` list.
+
+### Account and creator tools: authorize once
+
+Public tools need only the API key. For account and creator tools, add the OAuth client file, profile name and channel ID from [step 2](#2-set-environment-variables) to your client config, then run the one-time Google sign-in from a terminal with the same values:
+
+```bash
+YOUTUBE_OAUTH_CLIENT_SECRET_FILE=/absolute/path/to/client_secret.json \
+YOUTUBE_MCP_PROFILE_ID=creator-main \
+npx -y github:pratikgh0se/youtube-mcp youtube-auth
+```
+
+This opens a browser for Google consent on a local `127.0.0.1` callback and requests the `youtube`, `youtube.force-ssl` and `yt-analytics.readonly` scopes. The token is stored under `~/.youtube-mcp` for that profile, and later calls refresh it silently. Run it again if you revoke access.
+
+## Google credentials
+
+### 1. Create credentials
 
 In the [Google Cloud console](https://console.cloud.google.com/):
 
@@ -77,9 +212,9 @@ In the [Google Cloud console](https://console.cloud.google.com/):
 2. Create an **API key**. This is enough for the public tools.
 3. For account and creator tools, configure the OAuth consent screen (add yourself as a test user while the app is in testing), then create an **OAuth client ID** of type **Desktop app** and download its JSON file.
 
-### 3. Set environment variables
+### 2. Set environment variables
 
-Copy `.env.example` to `.env` (it is git-ignored) or put these in your client config. Never commit real values.
+Put these in your client config (see [Install](#install)), or copy `.env.example` to `.env` (it is git-ignored) when running from a checkout. Never commit real values.
 
 | Variable | Needed for | Meaning |
 | --- | --- | --- |
@@ -87,23 +222,21 @@ Copy `.env.example` to `.env` (it is git-ignored) or put these in your client co
 | `YOUTUBE_OAUTH_CLIENT_SECRET_FILE` | Account and creator tools | Absolute path to the Desktop OAuth client JSON. |
 | `YOUTUBE_MCP_PROFILE_ID` | Creator tools | A name you choose, e.g. `creator-main`. Keeps local state separate per profile. |
 | `YOUTUBE_MCP_CHANNEL_ID` | Creator tools | Your channel ID (starts with `UC`). The signed-in account must own it. |
-| `YOUTUBE_MCP_STATE_DIR` | Optional | Where local state lives. Defaults to `~/.youtube-mcp`. |
+| `YOUTUBE_MCP_STATE_DIR` | Optional | Where local state lives. Defaults to `~/.youtube-mcp`. Set it in your shell or client `env`; the Claude Code plugin and Gemini extension do not prompt for it. |
 
-### 4. Authorize once
+## Run from a local checkout
+
+For development, or to run without `npx`:
 
 ```bash
-npm run auth
+git clone https://github.com/pratikgh0se/youtube-mcp.git
+cd youtube-mcp
+npm ci
+npm run build   # npm ci already builds via the prepare script
+npm run auth    # one-time Google sign-in, same as the npx youtube-auth command
 ```
 
-This opens a browser for Google consent on a local `127.0.0.1` callback. It requests the `youtube`, `youtube.force-ssl` and `yt-analytics.readonly` scopes. Later calls refresh the token silently. Run it again if you revoke access.
-
-## Connect your MCP client
-
-Use the absolute path to your checkout. The server is started with `node` and speaks stdio.
-
-### Claude Code
-
-Add to `.mcp.json` in a project (or your user MCP config):
+Point your client at the checkout with an absolute path:
 
 ```json
 {
@@ -122,11 +255,7 @@ Add to `.mcp.json` in a project (or your user MCP config):
 }
 ```
 
-### Claude Desktop
-
-Add the same `mcpServers` block to `claude_desktop_config.json`, then restart Claude Desktop.
-
-Templates for Codex, Cursor, OpenClaw, Hermes, OpenCode and a generic stdio client are in [`configs/`](configs). They launch the `youtube-mcp` command, so they assume it is on your `PATH`. Otherwise change the command to `node` with the path above.
+More templates (Codex, Cursor, OpenClaw, Hermes, OpenCode, generic stdio) are in [`configs/`](configs). They launch the `youtube-mcp` command, so they assume it is on your `PATH`. Otherwise change the command to `node` with the path above.
 
 ### Optional: local HTTP
 
@@ -180,7 +309,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 npm ci
 npm run lint            # type check the source
 npm run typecheck:tests # type check the tests
-npm test                # vitest, fully offline (202 tests)
+npm test                # vitest, fully offline (210 tests)
 npm run build           # compile to dist/
 npm run smoke:read-only # offline by default; set YOUTUBE_LIVE_SMOKE=1 with an API key for one live read
 npm run dev:stdio       # run from source over stdio

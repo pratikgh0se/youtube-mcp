@@ -1,0 +1,34 @@
+{
+  "name": "youtube-mcp",
+  "version": "0.2.0",
+  "description": "Search YouTube, manage your channel and read your analytics. Every change to your account is previewed and needs your approval first.",
+  "mcpServers": {
+    "youtube-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"]
+    }
+  },
+  "settings": [
+    {
+      "name": "YouTube Data API key",
+      "description": "Your YouTube Data API v3 key. Enough for the public tools.",
+      "envVar": "YOUTUBE_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "OAuth client JSON path (optional)",
+      "description": "Absolute path to the Desktop OAuth client JSON. Only needed for account and creator tools.",
+      "envVar": "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"
+    },
+    {
+      "name": "Profile name (optional)",
+      "description": "A name you choose, for example creator-main. Only needed for creator tools.",
+      "envVar": "YOUTUBE_MCP_PROFILE_ID"
+    },
+    {
+      "name": "Channel ID (optional)",
+      "description": "Your YouTube channel ID, starting with UC. Only needed for creator tools.",
+      "envVar": "YOUTUBE_MCP_CHANNEL_ID"
+    }
+  ]
+}

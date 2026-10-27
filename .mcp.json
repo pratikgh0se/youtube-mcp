@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "youtube-mcp": {
+      "command": "npx",
+      "args": ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"],
+      "env": {
+        "YOUTUBE_API_KEY": "${user_config.YOUTUBE_API_KEY}",
+        "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": "${user_config.YOUTUBE_OAUTH_CLIENT_SECRET_FILE}",
+        "YOUTUBE_MCP_PROFILE_ID": "${user_config.YOUTUBE_MCP_PROFILE_ID}",
+        "YOUTUBE_MCP_CHANNEL_ID": "${user_config.YOUTUBE_MCP_CHANNEL_ID}"
+      }
+    }
+  }
+}
