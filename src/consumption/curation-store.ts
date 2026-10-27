@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import Database from 'better-sqlite3';
+import { openDatabase } from '../sqlite/open-database.js';
 
 export type CurationCandidateSource = 'allowlist' | 'playlist' | 'search';
 
@@ -93,7 +94,7 @@ export class CurationStore {
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       chmodSync(directory, 0o700);
     }
-    this.database = new Database(this.databasePath);
+    this.database = openDatabase(this.databasePath);
     if (this.databasePath !== ':memory:' && existsSync(this.databasePath)) chmodSync(this.databasePath, 0o600);
     this.database.exec(schema);
     this.addColumnIfMissing('curation_policies', 'retention_days', 'INTEGER NOT NULL DEFAULT 30');

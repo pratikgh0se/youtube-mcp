@@ -29,6 +29,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:mcpb": "node scripts/build-mcpb.mjs",
     "auth": "node dist/index.js youtube-auth",
     "dev:stdio": "tsx src/index.ts --transport stdio",
     "dev:http": "tsx src/index.ts --transport http",

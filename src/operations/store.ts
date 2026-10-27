@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import Database from 'better-sqlite3';
+import { openDatabase } from '../sqlite/open-database.js';
 
 import type { ConnectionProfile, OperationReconciliation, OperationState } from '../types.js';
 import { AppError } from '../errors.js';
@@ -170,7 +171,7 @@ async function acquireLease(stateDir: string, profileId: string, options: Operat
   await mkdir(stateDir, { recursive: true, mode: 0o700 });
   await chmod(stateDir, 0o700);
   const databasePath = join(stateDir, 'operation-locks.sqlite');
-  const database = new Database(databasePath);
+  const database = openDatabase(databasePath);
   await chmod(databasePath, 0o600);
   database.pragma(`busy_timeout = ${Math.max(1, Math.min(waitMs, 100))}`);
   database.exec('CREATE TABLE IF NOT EXISTS operation_locks (profile_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at INTEGER NOT NULL, owner_pid INTEGER NOT NULL DEFAULT -1)');
