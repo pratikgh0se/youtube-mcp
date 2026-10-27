@@ -172,6 +172,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 - The default transport is stdio. The optional HTTP transport binds to `127.0.0.1` only.
 - Never commit `.env`, your OAuth client JSON, token state or Takeout exports. The `.gitignore` already excludes `.env` files.
 - Running this server gives the AI client access to your YouTube account within the scopes you grant. Review each preview before approving it.
+- To report a vulnerability, follow [SECURITY.md](SECURITY.md) and use GitHub's private reporting. Please do not open a public issue.
 
 ## Development
 

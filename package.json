@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratikgh0se/youtube-mcp.git"
+  },
+  "homepage": "https://github.com/pratikgh0se/youtube-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/pratikgh0se/youtube-mcp/issues"
+  },
   "type": "module",
   "bin": {
     "youtube-mcp": "./bin/youtube-mcp.mjs"
