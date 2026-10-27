@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises';
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
+
+import { createMcpServer, type McpDependencies } from '../../src/mcp/server.js';
 
 const LAUNCH_PREFIX = ['npx', '-y', 'github:pratikgh0se/youtube-mcp'];
 const MANIFESTS = [
@@ -71,5 +75,29 @@ describe('install manifests', () => {
       expect(plugin.userConfig[key!], `${key} must be declared in userConfig`).toBeDefined();
     }
     expect(plugin.userConfig.YOUTUBE_API_KEY?.sensitive).toBe(true);
+  });
+
+  it('the MCP server reports the package.json version on initialize', async () => {
+    const { version } = (await load('package.json')) as { version: string };
+    const server = createMcpServer({} as McpDependencies);
+    const client = new Client({ name: 'version-check', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+
+    try {
+      expect(client.getServerVersion()).toMatchObject({ name: 'youtube-mcp', version });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('every optional userConfig entry defaults to an empty string', async () => {
+    const plugin = (await load('.claude-plugin/plugin.json')) as { userConfig: Record<string, { required?: boolean; default?: unknown }> };
+
+    for (const [key, option] of Object.entries(plugin.userConfig)) {
+      if (!option.required) expect(option.default, `${key} must set "default": ""`).toBe('');
+    }
   });
 });

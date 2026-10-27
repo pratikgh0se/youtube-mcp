@@ -16,16 +16,24 @@ export function loadProjectEnvFile(projectDirectory: string): boolean {
   }
 }
 
+/** Reads an environment variable, treating an empty string as unset (plugin and extension hosts pass "" for blank optional settings). */
+export function readEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name];
+  return value === undefined || value === '' ? undefined : value;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv, homeDir: string): AppConfig {
-  const stateDir = env.YOUTUBE_MCP_STATE_DIR ?? `${homeDir}/.youtube-mcp`;
+  const stateDir = readEnv(env, 'YOUTUBE_MCP_STATE_DIR') ?? `${homeDir}/.youtube-mcp`;
+  const apiKey = readEnv(env, 'YOUTUBE_API_KEY');
+  const oauthClientSecretFile = readEnv(env, 'YOUTUBE_OAUTH_CLIENT_SECRET_FILE');
 
   return {
-    apiKey: env.YOUTUBE_API_KEY,
-    oauthClientSecretFile: env.YOUTUBE_OAUTH_CLIENT_SECRET_FILE,
-    profileId: env.YOUTUBE_MCP_PROFILE_ID,
-    channelId: env.YOUTUBE_MCP_CHANNEL_ID,
+    apiKey,
+    oauthClientSecretFile,
+    profileId: readEnv(env, 'YOUTUBE_MCP_PROFILE_ID'),
+    channelId: readEnv(env, 'YOUTUBE_MCP_CHANNEL_ID'),
     stateDir,
     diagnostics: () =>
-      `stateDir=${stateDir}; apiKey=${env.YOUTUBE_API_KEY ? 'configured' : 'missing'}; oauth=${env.YOUTUBE_OAUTH_CLIENT_SECRET_FILE ? 'configured' : 'missing'}`,
+      `stateDir=${stateDir}; apiKey=${apiKey ? 'configured' : 'missing'}; oauth=${oauthClientSecretFile ? 'configured' : 'missing'}`,
   };
 }

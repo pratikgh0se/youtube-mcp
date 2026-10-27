@@ -69,4 +69,46 @@ describe('loadConfig', () => {
 
     expect(config.stateDir).toBe('/var/lib/youtube-mcp');
   });
+
+  it('treats an empty-string variable as unset and falls back to the default', () => {
+    const config = loadConfig(
+      {
+        YOUTUBE_API_KEY: '',
+        YOUTUBE_OAUTH_CLIENT_SECRET_FILE: '',
+        YOUTUBE_MCP_PROFILE_ID: '',
+        YOUTUBE_MCP_CHANNEL_ID: '',
+        YOUTUBE_MCP_STATE_DIR: '',
+      },
+      '/Users/tester',
+    );
+
+    expect(config.stateDir).toBe('/Users/tester/.youtube-mcp');
+    expect(config.apiKey).toBeUndefined();
+    expect(config.oauthClientSecretFile).toBeUndefined();
+    expect(config.profileId).toBeUndefined();
+    expect(config.channelId).toBeUndefined();
+    expect(config.diagnostics()).toContain('apiKey=missing');
+    expect(config.diagnostics()).toContain('oauth=missing');
+  });
+
+  it('keeps non-empty values for every variable', () => {
+    const config = loadConfig(
+      {
+        YOUTUBE_API_KEY: 'key',
+        YOUTUBE_OAUTH_CLIENT_SECRET_FILE: '/private/client.json',
+        YOUTUBE_MCP_PROFILE_ID: 'creator-main',
+        YOUTUBE_MCP_CHANNEL_ID: 'UC123',
+        YOUTUBE_MCP_STATE_DIR: '/var/lib/youtube-mcp',
+      },
+      '/Users/tester',
+    );
+
+    expect(config).toMatchObject({
+      apiKey: 'key',
+      oauthClientSecretFile: '/private/client.json',
+      profileId: 'creator-main',
+      channelId: 'UC123',
+      stateDir: '/var/lib/youtube-mcp',
+    });
+  });
 });

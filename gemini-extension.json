@@ -29,6 +29,11 @@
       "name": "Channel ID (optional)",
       "description": "Your YouTube channel ID, starting with UC. Only needed for creator tools.",
       "envVar": "YOUTUBE_MCP_CHANNEL_ID"
+    },
+    {
+      "name": "State directory (optional)",
+      "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
+      "envVar": "YOUTUBE_MCP_STATE_DIR"
     }
   ]
 }

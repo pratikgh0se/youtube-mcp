@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 
@@ -128,8 +130,11 @@ export type McpDependencies = {
   curation: Pick<ProfileCurationService, 'savePolicy' | 'saveCandidate' | 'propose' | 'reset'>;
 };
 
+// Same relative depth from src/mcp (tsx, vitest) and dist/mcp (built), so one path serves both.
+const { version: SERVER_VERSION } = createRequire(import.meta.url)('../../package.json') as { version: string };
+
 export function createMcpServer(dependencies: McpDependencies): McpServer {
-  const server = new McpServer({ name: 'youtube-mcp', version: '0.1.0' });
+  const server = new McpServer({ name: 'youtube-mcp', version: SERVER_VERSION });
 
   server.registerTool('youtube_search', readTool('Search public YouTube videos.', searchSchema), (input) => resultOf(() => dependencies.public.search(input)));
   server.registerTool('youtube_get_video', readTool('Get a public YouTube video by ID.', videoSchema), (input) => resultOf(() => dependencies.public.getVideo(input)));

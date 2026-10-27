@@ -222,7 +222,7 @@ Put these in your client config (see [Install](#install)), or copy `.env.example
 | `YOUTUBE_OAUTH_CLIENT_SECRET_FILE` | Account and creator tools | Absolute path to the Desktop OAuth client JSON. |
 | `YOUTUBE_MCP_PROFILE_ID` | Creator tools | A name you choose, e.g. `creator-main`. Keeps local state separate per profile. |
 | `YOUTUBE_MCP_CHANNEL_ID` | Creator tools | Your channel ID (starts with `UC`). The signed-in account must own it. |
-| `YOUTUBE_MCP_STATE_DIR` | Optional | Where local state lives. Defaults to `~/.youtube-mcp`. Set it in your shell or client `env`; the Claude Code plugin and Gemini extension do not prompt for it. |
+| `YOUTUBE_MCP_STATE_DIR` | Optional | Where local state lives. Defaults to `~/.youtube-mcp`. The Claude Code plugin and Gemini extension prompt for it (blank means the default). An empty value is treated as unset everywhere. |
 
 ## Run from a local checkout
 
@@ -309,7 +309,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 npm ci
 npm run lint            # type check the source
 npm run typecheck:tests # type check the tests
-npm test                # vitest, fully offline (210 tests)
+npm test                # vitest, fully offline (214 tests)
 npm run build           # compile to dist/
 npm run smoke:read-only # offline by default; set YOUTUBE_LIVE_SMOKE=1 with an API key for one live read
 npm run dev:stdio       # run from source over stdio
