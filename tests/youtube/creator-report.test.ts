@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CreatorAnalyticsService } from '../../src/youtube/analytics.js';
+import { CreatorAnalyticsService, pacificToday } from '../../src/youtube/analytics.js';
 import { buildReportQuery } from '../../src/youtube/creator-report.js';
 import { YouTubeClient, type YouTubeAnalyticsApi } from '../../src/youtube/client.js';
 import { creatorReportSchema } from '../../src/mcp/schemas.js';
@@ -90,6 +90,17 @@ describe('CreatorAnalyticsService.report', () => {
     }).report({ metrics: ['views'], dimensions: ['day'], sort: ['day'] });
     expect(requests).toEqual([{ ids: 'channel==MINE', startDate: '2026-09-30', endDate: today, metrics: 'views', dimensions: 'day', sort: 'day' }]);
     expect(report).toMatchObject({ columns: ['day', 'views'], rowCount: 2, rows: [{ day: '2026-10-01', views: 5 }, { day: '2026-10-02', views: 7 }] });
+  });
+
+  it('throws provider_error when a column header name is missing instead of returning empty rows', async () => {
+    await expect(service([], { columnHeaders: [{ name: 'day' }, {}], rows: [['2026-10-01', 5]] }).report({ metrics: ['views'] })).rejects.toMatchObject({ code: 'provider_error' });
+    await expect(service([], { columnHeaders: [{ name: '' }], rows: [[1]] }).report({ metrics: ['views'] })).rejects.toMatchObject({ code: 'provider_error' });
+  });
+
+  it('defaults the end date to the Pacific calendar day, not UTC', () => {
+    expect(pacificToday(new Date('2026-10-28T03:00:00Z'))).toBe('2026-10-27');
+    expect(pacificToday(new Date('2026-10-28T08:00:00Z'))).toBe('2026-10-28');
+    expect(pacificToday(new Date('2026-01-15T07:59:00Z'))).toBe('2026-01-14');
   });
 
   it('returns zero rows for an empty report and never calls Google for invalid input', async () => {

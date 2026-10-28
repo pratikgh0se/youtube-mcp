@@ -1,7 +1,7 @@
 {
   "name": "youtube-mcp",
   "version": "0.3.0",
-  "description": "Search YouTube, manage your channel and read your analytics. Every change to your account is previewed and needs your approval first.",
+  "description": "Search YouTube, manage your channel and read your analytics. Changes to your channel and content are previewed and need your approval first; viewer actions need explicit confirmation.",
   "mcpServers": {
     "youtube-mcp": {
       "command": "npx",

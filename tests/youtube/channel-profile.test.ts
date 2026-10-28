@@ -27,7 +27,7 @@ const branding = () => ({
 async function setup(options: { channel?: () => ProviderChannel | undefined; verify?: () => Promise<unknown> } = {}, profile = creator, operations?: OperationService) {
   const stateDir = await mkdtemp(join(tmpdir(), 'youtube-mcp-channel-'));
   directories.push(stateDir);
-  let channel: ProviderChannel | undefined = { id: 'UC-mine', brandingSettings: branding() };
+  let channel: ProviderChannel | undefined = { id: 'UC-mine', title: 'Mine', brandingSettings: branding() };
   const provider = {
     getChannel: vi.fn(async () => (options.channel ? options.channel() : channel)),
     updateBranding: vi.fn(async (input: { id: string }) => ({ id: input.id })),
@@ -76,7 +76,7 @@ describe('channel profile update', () => {
   it('provider sends part=brandingSettings with the full object through channels.update', async () => {
     const updates: Record<string, unknown>[] = [];
     const api = testYouTubeApi({ channels: {
-      list: async () => ({ data: { items: [{ id: 'UC-mine', etag: 'e', brandingSettings: branding() }] } }),
+      list: async () => ({ data: { items: [{ id: 'UC-mine', etag: 'e', snippet: { title: 'Mine' }, brandingSettings: branding() }] } }),
       update: async (request) => { updates.push(request); return { data: { id: 'UC-mine' } }; },
     } });
     const provider = createChannelProvider({ getAccessToken: async () => 't' }, new YouTubeClient({ stateDir: '/tmp/x', diagnostics: () => '' }, { createPublicApi: () => api, createAuthorizedApi: () => api }));
@@ -102,15 +102,37 @@ describe('channel profile update', () => {
     const preview = await service.preflightUpdate({ description: 'New description' });
     await approve(preview.approvalId);
     const changed = branding(); changed.channel.keywords = 'edited elsewhere';
-    setChannel({ id: 'UC-mine', brandingSettings: changed });
+    setChannel({ id: 'UC-mine', title: 'Mine', brandingSettings: changed });
     await expect(service.update({ description: 'New description', approvalId: preview.approvalId, confirm: true })).rejects.toMatchObject({ code: 'stale_preview' });
     expect(provider.updateBranding).not.toHaveBeenCalled();
+  });
+
+  it('refuses incomplete channel reads at preflight and execute, never sending an update', async () => {
+    const incomplete: Array<ProviderChannel> = [
+      { id: 'UC-mine', title: 'Mine', brandingSettings: {} },
+      { id: 'UC-mine', title: 'Mine', brandingSettings: { channel: {} } },
+      { id: 'UC-mine', title: 'Mine', brandingSettings: { image: { bannerExternalUrl: 'b' } } },
+      { id: 'UC-mine', brandingSettings: branding() },
+    ];
+    for (const bad of incomplete) {
+      const s = await setup({ channel: () => bad });
+      await expect(s.service.preflightUpdate({ description: 'x' })).rejects.toMatchObject({ code: 'provider_error', action: expect.stringContaining('nothing was changed') });
+      expect(s.provider.updateBranding).not.toHaveBeenCalled();
+    }
+    // execute: the read degrades after a good preflight
+    let degraded = false;
+    const s = await setup({ channel: () => (degraded ? { id: 'UC-mine', title: 'Mine', brandingSettings: {} } : { id: 'UC-mine', title: 'Mine', brandingSettings: branding() }) });
+    const preview = await s.service.preflightUpdate({ description: 'x' });
+    await s.approve(preview.approvalId);
+    degraded = true;
+    await expect(s.service.update({ description: 'x', approvalId: preview.approvalId, confirm: true })).rejects.toMatchObject({ code: 'provider_error' });
+    expect(s.provider.updateBranding).not.toHaveBeenCalled();
   });
 
   it('refuses a channel that is not the selected creator channel', async () => {
     const { service } = await setup({ verify: async () => { throw new AppError('ownership_required', 'no', 'no', false); } });
     await expect(service.preflightUpdate({ description: 'x' })).rejects.toMatchObject({ code: 'ownership_required' });
-    const mismatch = await setup({ channel: () => ({ id: 'UC-someone-else', brandingSettings: branding() }) });
+    const mismatch = await setup({ channel: () => ({ id: 'UC-someone-else', title: 'X', brandingSettings: branding() }) });
     await expect(mismatch.service.preflightUpdate({ description: 'x' })).rejects.toMatchObject({ code: 'ownership_required' });
   });
 

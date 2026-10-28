@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -63,7 +63,8 @@ async function service(overrides: Record<string, unknown> = {}) {
   };
   const operations = new OperationService(new OperationStore(stateDir), () => new Date('2026-08-18T01:00:00.000Z'));
   return {
-    content: new CreatorContentService(operations, resources, provider, creator),
+    content: new CreatorContentService(operations, resources, provider, creator, stateDir),
+    stateDir,
     operations,
     provider,
     resources,
@@ -102,10 +103,10 @@ describe('CreatorContentService', () => {
   });
 
   it('executes an approved metadata update after an MCP restart', async () => {
-    const { content, operations, provider, resources } = await service();
+    const { content, operations, provider, resources, stateDir } = await service();
     const preview = await content.preflightMetadataUpdate({ videoId: 'video-1', title: 'New' });
     await approve(content, preview);
-    const restarted = new CreatorContentService(operations, resources, provider, creator);
+    const restarted = new CreatorContentService(operations, resources, provider, creator, stateDir);
 
     await expect(restarted.updateMetadata({ approvalId: preview.approvalId, videoId: 'video-1', title: 'New', confirm: true }))
       .resolves.toMatchObject({ operationId: preview.approvalId, state: 'succeeded', videoId: 'video-1' });
@@ -259,9 +260,8 @@ describe('CreatorContentService', () => {
   it('uploads, updates, downloads, and deletes only caption tracks owned by the selected video', async () => {
     const directory = await temporaryDirectory();
     const captionPath = join(directory, 'captions.vtt');
-    const outputPath = join(directory, 'downloaded.vtt');
     await writeFile(captionPath, 'WEBVTT\n\n00:00.000 --> 00:01.000\nHello');
-    const { content, provider } = await service();
+    const { content, provider, stateDir } = await service();
 
     const upload = await content.preflightCaptionUpload({ videoId: 'video-1', filePath: captionPath, mimeType: 'text/vtt', language: 'en', name: 'English' });
     await approve(content, upload);
@@ -273,9 +273,12 @@ describe('CreatorContentService', () => {
     await expect(content.updateCaption({ approvalId: update.approvalId, videoId: 'video-1', captionId: 'caption-1', filePath: captionPath, mimeType: 'text/vtt', language: 'en', name: 'English', confirm: true }))
       .resolves.toMatchObject({ state: 'succeeded', captionId: 'caption-1' });
 
-    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
-      .resolves.toMatchObject({ state: 'succeeded', captionId: 'caption-1', downloaded: true });
+    const outputPath = join(await realpath(stateDir), 'downloads', 'downloaded.vtt');
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName: 'downloaded.vtt' }))
+      .resolves.toMatchObject({ state: 'succeeded', captionId: 'caption-1', downloaded: true, path: outputPath });
     await expect(readFile(outputPath, 'utf8')).resolves.toContain('WEBVTT');
+    expect((await stat(outputPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(stateDir, 'downloads'))).mode & 0o777).toBe(0o700);
 
     const deletion = await content.preflightCaptionDelete({ videoId: 'video-1', captionId: 'caption-1' });
     await approve(content, deletion);
@@ -421,35 +424,55 @@ describe('CreatorContentService', () => {
   });
 
   it('downloads without approval but refuses a caption the selected video does not own', async () => {
-    const directory = await temporaryDirectory();
-    const outputPath = join(directory, 'other.vtt');
     const { content, provider } = await service();
-
-    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'other-caption', outputPath }))
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'other-caption', fileName: 'other.vtt' }))
       .rejects.toMatchObject({ code: 'ownership_required' });
     expect(provider.downloadCaption).not.toHaveBeenCalled();
   });
 
-  it('creates a caption download destination exclusively instead of overwriting an existing file', async () => {
-    const directory = await temporaryDirectory();
-    const outputPath = join(directory, 'existing.vtt');
-    await writeFile(outputPath, 'keep this file');
-    const { content } = await service();
-    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
+  it('creates a caption download exclusively instead of overwriting an existing file', async () => {
+    const { content, stateDir } = await service();
+    await mkdir(join(stateDir, 'downloads'), { recursive: true });
+    await writeFile(join(stateDir, 'downloads', 'existing.vtt'), 'keep this file');
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName: 'existing.vtt' }))
       .rejects.toMatchObject({ code: 'caption_destination_exists' });
-    await expect(readFile(outputPath, 'utf8')).resolves.toBe('keep this file');
+    await expect(readFile(join(stateDir, 'downloads', 'existing.vtt'), 'utf8')).resolves.toBe('keep this file');
   });
 
-  it('does not follow a symbolic link selected as a caption download destination', async () => {
+  it('does not follow a symbolic link selected as the download file', async () => {
     const directory = await temporaryDirectory();
+    const { content, stateDir } = await service();
     const targetPath = join(directory, 'target.vtt');
-    const outputPath = join(directory, 'download.vtt');
     await writeFile(targetPath, 'keep the symlink target');
-    await symlink(targetPath, outputPath);
-    const { content } = await service();
-    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
+    await mkdir(join(stateDir, 'downloads'), { recursive: true });
+    await symlink(targetPath, join(stateDir, 'downloads', 'download.vtt'));
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName: 'download.vtt' }))
       .rejects.toMatchObject({ code: 'caption_destination_exists' });
     await expect(readFile(targetPath, 'utf8')).resolves.toBe('keep the symlink target');
+  });
+
+  it('rejects traversal, absolute paths, hidden names and other extensions without calling YouTube', async () => {
+    const { content, provider, stateDir } = await service();
+    for (const fileName of ['../x.vtt', 'a/b.vtt', '/etc/passwd.txt', join(stateDir, 'abs.vtt'), '.hidden.vtt', 'x.exe', 'noext', '..', 'a\\b.vtt']) {
+      await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName })).rejects.toMatchObject({ code: 'invalid_input' });
+    }
+    expect(provider.downloadCaption).not.toHaveBeenCalled();
+    await expect(access(join(stateDir, 'x.vtt'))).rejects.toThrow();
+  });
+
+  it('refuses a downloads directory that is a symlink escaping the state directory', async () => {
+    const outside = await temporaryDirectory();
+    const { content, provider, stateDir } = await service();
+    await symlink(outside, join(stateDir, 'downloads'));
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName: 'x.vtt' })).rejects.toMatchObject({ code: 'invalid_caption_destination' });
+    expect(provider.downloadCaption).not.toHaveBeenCalled();
+    await expect(access(join(outside, 'x.vtt'))).rejects.toThrow();
+  });
+
+  it('removes the partial file when the write fails', async () => {
+    const { content, stateDir } = await service({ downloadCaption: vi.fn(async () => 123 as never) });
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', fileName: 'partial.srt' })).rejects.toMatchObject({ code: 'invalid_caption_destination' });
+    await expect(access(join(stateDir, 'downloads', 'partial.srt'))).rejects.toThrow();
   });
 
   it('returns the exact caption target summary before deletion', async () => {

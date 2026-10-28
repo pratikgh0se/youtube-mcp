@@ -102,7 +102,7 @@ export const preflightCaptionUploadSchema = z.object(captionUploadFields);
 export const uploadCaptionSchema = preflightCaptionUploadSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightCaptionUpdateSchema = z.object({ ...captionUploadFields, captionId: id });
 export const updateCaptionSchema = preflightCaptionUpdateSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
-export const downloadCaptionSchema = z.object({ videoId: id, captionId: id, outputPath: z.string().min(1), format: z.enum(['srt', 'ttml', 'vtt']).optional() });
+export const downloadCaptionSchema = z.object({ videoId: id, captionId: id, fileName: z.string().min(1).max(120), format: z.enum(['srt', 'ttml', 'vtt']).optional() });
 export const preflightCaptionDeleteSchema = z.object({ videoId: id, captionId: id });
 export const deleteCaptionSchema = preflightCaptionDeleteSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AppError } from '../../src/errors.js';
 import { OperationService } from '../../src/operations/service.js';
 import { OperationStore } from '../../src/operations/store.js';
 import { createSubscriptionProvider, SubscriptionCurationService, type ProviderSubscription } from '../../src/youtube/subscriptions.js';
@@ -16,9 +17,9 @@ const creator = { id: 'creator-a', purpose: 'creator' as const, channelId: 'UC-m
 afterEach(async () => { await Promise.all(directories.splice(0).map((d) => rm(d, { force: true, recursive: true }))); });
 
 const subs: ProviderSubscription[] = [
-  { subscriptionId: 's1', subscriberChannelId: 'UC-viewer', channelId: 'c1', title: 'Channel One' },
-  { subscriptionId: 's2', subscriberChannelId: 'UC-viewer', channelId: 'c2', title: 'Channel Two' },
-  { subscriptionId: 's3', subscriberChannelId: 'UC-viewer', channelId: 'c3', title: 'Channel Three' },
+  { subscriptionId: 's1', subscriberChannelId: 'UC-mine', channelId: 'c1', title: 'Channel One' },
+  { subscriptionId: 's2', subscriberChannelId: 'UC-mine', channelId: 'c2', title: 'Channel Two' },
+  { subscriptionId: 's3', subscriberChannelId: 'UC-mine', channelId: 'c3', title: 'Channel Three' },
 ];
 
 async function setup(existing: ProviderSubscription[] = subs) {
@@ -26,12 +27,12 @@ async function setup(existing: ProviderSubscription[] = subs) {
   directories.push(stateDir);
   let current = existing;
   const provider = {
-    getAuthenticatedChannelId: vi.fn(async () => 'UC-viewer'),
+    getAuthenticatedChannelId: vi.fn(async () => 'UC-mine'),
     getSubscriptions: vi.fn(async (ids: string[]) => current.filter((item) => ids.includes(item.subscriptionId))),
     deleteSubscription: vi.fn(async (id: string) => { current = current.filter((item) => item.subscriptionId !== id); }),
   };
   const ops = new OperationService(new OperationStore(stateDir), () => new Date('2026-10-28T00:00:00.000Z'));
-  const service = new SubscriptionCurationService(ops, provider, creator);
+  const service = new SubscriptionCurationService(ops, provider, creator, { verifyPrincipal: async () => creator });
   const approve = (approvalId: string, profile = creator) => ops.approve({ approvalId, confirm: true, profileId: profile.id, channelId: profile.channelId });
   return { service, provider, ops, approve, setCurrent: (next: ProviderSubscription[]) => { current = next; } };
 }
@@ -51,7 +52,7 @@ describe('youtube_preflight_unsubscribe_many', () => {
     const preview = await service.preflightUnsubscribeMany({ subscriptionIds: ['s1', 's2', 'nope', 's1'] });
     expect(preview.kind).toBe('subscription.remove_many');
     expect(preview.desired).toMatchObject({
-      subscriptionIds: ['s1', 's2', 'nope'], toRemove: 2, alreadyGone: 1, approximateQuotaUnits: 100, subscriberChannelId: 'UC-viewer',
+      subscriptionIds: ['s1', 's2', 'nope'], toRemove: 2, alreadyGone: 1, approximateQuotaUnits: 100, subscriberChannelId: 'UC-mine',
       channels: [
         { subscriptionId: 's1', status: 'subscribed', channelId: 'c1', title: 'Channel One' },
         { subscriptionId: 's2', status: 'subscribed', channelId: 'c2', title: 'Channel Two' },
@@ -84,7 +85,7 @@ describe('youtube_unsubscribe_many', () => {
     await approve(preview.approvalId);
     await expect(service.unsubscribeMany({ subscriptionIds: ['s1'], approvalId: preview.approvalId, confirm: true })).rejects.toMatchObject({ code: 'approval_required' });
     await expect(service.unsubscribeMany({ subscriptionIds: ids, approvalId: preview.approvalId })).rejects.toMatchObject({ code: 'approval_required' });
-    const other = new SubscriptionCurationService(ops, provider, { ...creator, id: 'creator-b', channelId: 'UC-other' });
+    const other = new SubscriptionCurationService(ops, provider, { ...creator, id: 'creator-b', channelId: 'UC-other' }, { verifyPrincipal: async () => creator });
     await expect(other.unsubscribeMany({ subscriptionIds: ids, approvalId: preview.approvalId, confirm: true })).rejects.toMatchObject({ code: 'profile_mismatch' });
     expect(provider.deleteSubscription).not.toHaveBeenCalled();
   });
@@ -153,7 +154,25 @@ describe('youtube_unsubscribe_many', () => {
     const preview = await service.preflightUnsubscribeMany({ subscriptionIds: ['s1'] });
     await approve(preview.approvalId);
     const result = await service.unsubscribeMany({ subscriptionIds: ['s1'], approvalId: preview.approvalId, confirm: true });
-    expect(result).toMatchObject({ state: 'unknown', complete: false });
+    expect(result).toMatchObject({ state: 'unknown', complete: false, summary: { failed: 0, unknown: 1 } });
+    expect(result.results[0]).toMatchObject({ status: 'unknown', action: expect.stringContaining('youtube_list_subscriptions') });
+  });
+
+  it('refuses when the principal check fails or the OAuth channel is not the selected profile channel (preflight and execute)', async () => {
+    const { provider, ops, approve, service } = await setup();
+    provider.getAuthenticatedChannelId.mockResolvedValue('UC-someone-else');
+    await expect(service.preflightUnsubscribeMany({ subscriptionIds: ids })).rejects.toMatchObject({ code: 'ownership_required' });
+
+    provider.getAuthenticatedChannelId.mockResolvedValue('UC-mine');
+    const preview = await service.preflightUnsubscribeMany({ subscriptionIds: ids });
+    await approve(preview.approvalId);
+    provider.getAuthenticatedChannelId.mockResolvedValue('UC-someone-else');
+    await expect(service.unsubscribeMany({ subscriptionIds: ids, approvalId: preview.approvalId, confirm: true })).rejects.toMatchObject({ code: 'ownership_required' });
+    expect(provider.deleteSubscription).not.toHaveBeenCalled();
+
+    const denied = new SubscriptionCurationService(ops, provider, creator, { verifyPrincipal: async () => { throw new AppError('ownership_required', 'no', 'no', false); } });
+    provider.getAuthenticatedChannelId.mockResolvedValue('UC-mine');
+    await expect(denied.preflightUnsubscribeMany({ subscriptionIds: ids })).rejects.toMatchObject({ code: 'ownership_required' });
   });
 });
 
@@ -161,16 +180,16 @@ describe('createSubscriptionProvider', () => {
   it('verifies via subscriptions.list id= with the subscriber channel and deletes by id', async () => {
     const calls: Array<[string, Record<string, unknown>]> = [];
     const api = testYouTubeApi({
-      channels: { list: async (request) => { calls.push(['channels', request]); return { data: { items: [{ id: 'UC-viewer' }] } }; } },
+      channels: { list: async (request) => { calls.push(['channels', request]); return { data: { items: [{ id: 'UC-mine' }] } }; } },
       subscriptions: {
         insert: async () => ({ data: {} }),
         delete: async (request) => { calls.push(['delete', request]); return { data: {} }; },
-        list: async (request) => { calls.push(['list', request]); return { data: { items: [{ id: 's1', snippet: { channelId: 'UC-viewer', title: 'T', resourceId: { channelId: 'c1' } } }] } }; },
+        list: async (request) => { calls.push(['list', request]); return { data: { items: [{ id: 's1', snippet: { channelId: 'UC-mine', title: 'T', resourceId: { channelId: 'c1' } } }] } }; },
       },
     });
     const provider = createSubscriptionProvider({ getAccessToken: async () => 't' }, new YouTubeClient({ stateDir: '/tmp/x', diagnostics: () => '' }, { createPublicApi: () => api, createAuthorizedApi: () => api }));
-    await expect(provider.getAuthenticatedChannelId()).resolves.toBe('UC-viewer');
-    await expect(provider.getSubscriptions(['s1', 's2'])).resolves.toEqual([{ subscriptionId: 's1', subscriberChannelId: 'UC-viewer', channelId: 'c1', title: 'T' }]);
+    await expect(provider.getAuthenticatedChannelId()).resolves.toBe('UC-mine');
+    await expect(provider.getSubscriptions(['s1', 's2'])).resolves.toEqual([{ subscriptionId: 's1', subscriberChannelId: 'UC-mine', channelId: 'c1', title: 'T' }]);
     await provider.deleteSubscription('s1');
     expect(calls).toEqual([
       ['channels', { part: 'id', mine: true }],

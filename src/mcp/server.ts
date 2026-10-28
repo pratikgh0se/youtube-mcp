@@ -200,7 +200,7 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_upload_caption', writeTool('Upload an approved caption file without returning media bytes.', uploadCaptionSchema), (input) => resultOf(() => dependencies.content.uploadCaption(input)));
   server.registerTool('youtube_preflight_caption_update', writeTool('Validate and preview an owned caption update.', preflightCaptionUpdateSchema), (input) => resultOf(() => dependencies.content.preflightCaptionUpdate(input)));
   server.registerTool('youtube_update_caption', writeTool('Update an approved owned caption track.', updateCaptionSchema), (input) => resultOf(() => dependencies.content.updateCaption(input)));
-  server.registerTool('youtube_download_caption', readTool('Download an owned caption track to a new local file (never overwrites; bytes are not returned). Read-only on YouTube: no approval needed; ownership of the video and caption is verified first.', downloadCaptionSchema), (input) => resultOf(() => dependencies.content.downloadCaption(input)));
+  server.registerTool('youtube_download_caption', downloadTool('Download an owned caption track into <state dir>/downloads/ as a new file you name with fileName (a plain name ending in .srt, .vtt, .sbv or .txt; no paths). Never overwrites; bytes are not returned, the absolute path written is. Read-only on YouTube: no approval needed; ownership of the video and caption is verified first.', downloadCaptionSchema), (input) => resultOf(() => dependencies.content.downloadCaption(input)));
   server.registerTool('youtube_preflight_caption_delete', writeTool('Preview deletion of an owned caption track.', preflightCaptionDeleteSchema), (input) => resultOf(() => dependencies.content.preflightCaptionDelete(input)));
   server.registerTool('youtube_delete_caption', writeTool('Delete an approved owned caption track.', deleteCaptionSchema), (input) => resultOf(() => dependencies.content.deleteCaption(input)));
 
@@ -227,7 +227,7 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_preflight_update_channel', writeTool('Preview an edit to the selected creator channel profile (description, keywords, country, defaultLanguage), showing current vs desired. Other branding settings are preserved on execute.', preflightUpdateChannelSchema), (input) => resultOf(() => dependencies.channelProfile.preflightUpdate(input)));
   server.registerTool('youtube_update_channel', writeTool('Apply an approved channel profile edit (read-modify-write of brandingSettings so untouched fields are kept). Approve with youtube_approve, then call with confirm: true and the same fields.', updateChannelSchema), (input) => resultOf(() => dependencies.channelProfile.update(input)));
   server.registerTool('youtube_preflight_unsubscribe_many', writeTool('Preview removing up to 100 subscriptions of the authenticated account: verifies each belongs to the account and lists every channel title to be removed, with approximate quota (50 units per removal).', preflightUnsubscribeManySchema), (input) => resultOf(() => dependencies.subscriptions.preflightUnsubscribeMany(input)));
-  server.registerTool('youtube_unsubscribe_many', writeTool('Remove the approved subscriptions one by one and report each as removed, already_gone or failed. Stops early (with a partial report) if YouTube quota runs out. Approve with youtube_approve first, then call with confirm: true.', unsubscribeManySchema), (input) => resultOf(() => dependencies.subscriptions.unsubscribeMany(input)));
+  server.registerTool('youtube_unsubscribe_many', writeTool('Remove the approved subscriptions one by one and report each as removed, already_gone, failed (definitively rejected) or unknown (outcome uncertain after a server or network error: reconcile with youtube_list_subscriptions before retrying). Stops early (with a partial report) if YouTube quota runs out. Approve with youtube_approve first, then call with confirm: true.', unsubscribeManySchema), (input) => resultOf(() => dependencies.subscriptions.unsubscribeMany(input)));
 
   server.registerTool('youtube_import_takeout', {
     description: 'Import a local Google Takeout YouTube-history JSON or HTML file into local derived analytics.',
@@ -249,6 +249,10 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
 
 function readTool<Schema extends z.ZodType>(description: string, inputSchema: Schema) {
   return { description, inputSchema, annotations: { readOnlyHint: true } };
+}
+
+function downloadTool<Schema extends z.ZodType>(description: string, inputSchema: Schema) {
+  return { description, inputSchema, annotations: { destructiveHint: false } };
 }
 
 function writeTool<Schema extends z.ZodType>(description: string, inputSchema: Schema) {

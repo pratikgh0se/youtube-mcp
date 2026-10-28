@@ -3,7 +3,7 @@
   "name": "youtube-mcp",
   "display_name": "YouTube MCP",
   "version": "0.3.0",
-  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Every change to your account is previewed and needs your approval first.",
+  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Changes to your channel and content are previewed and need your approval first; viewer actions need explicit confirmation.",
   "author": {
     "name": "Pratik Ghose",
     "url": "https://github.com/pratikgh0se"

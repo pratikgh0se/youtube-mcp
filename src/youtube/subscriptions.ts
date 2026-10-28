@@ -22,14 +22,16 @@ export type SubscriptionProvider = {
 
 export type UnsubscribeManyItem = {
   subscriptionId: string;
-  status: 'removed' | 'already_gone' | 'failed' | 'not_attempted';
+  status: 'removed' | 'already_gone' | 'failed' | 'unknown' | 'not_attempted';
+  /** Set on 'unknown' items: how to find out whether the delete happened. */
+  action?: string;
   channelId?: string;
   title?: string;
   error?: { code: string; message: string; status?: number; reason?: string };
 };
 export type UnsubscribeManyResult = OperationReceipt & {
   results: UnsubscribeManyItem[];
-  summary: { requested: number; removed: number; alreadyGone: number; failed: number; notAttempted: number };
+  summary: { requested: number; removed: number; alreadyGone: number; failed: number; unknown: number; notAttempted: number };
   complete: boolean;
   stoppedEarly?: { reason: 'quotaExceeded'; message: string };
   approximateQuotaUnitsUsed: number;
@@ -40,6 +42,7 @@ export class SubscriptionCurationService {
     private readonly operations: OperationService,
     private readonly provider: SubscriptionProvider,
     private readonly profile: CreatorProfile,
+    private readonly principal: { verifyPrincipal(): Promise<unknown> },
   ) {}
 
   async preflightUnsubscribeMany(input: { subscriptionIds: string[] }): Promise<OperationPreview> {
@@ -96,8 +99,12 @@ export class SubscriptionCurationService {
             stoppedEarly = { reason: 'quotaExceeded', message: 'YouTube quota ran out mid-run. Remaining subscriptions were not attempted; preflight again after the quota resets.' };
             results.push({ ...identity, status: 'not_attempted', error: errorOf(safe) });
           } else {
-            if (!isDefinitiveRejection(error)) unknownOutcome = true;
-            results.push({ ...identity, status: 'failed', error: errorOf(safe) });
+            if (isDefinitiveRejection(error)) {
+              results.push({ ...identity, status: 'failed', error: errorOf(safe) });
+            } else {
+              unknownOutcome = true;
+              results.push({ ...identity, status: 'unknown', error: errorOf(safe), action: 'The delete may or may not have happened. Call youtube_list_subscriptions to check whether this subscription still exists before retrying.' });
+            }
           }
         }
       }
@@ -106,9 +113,10 @@ export class SubscriptionCurationService {
         removed: count(results, 'removed'),
         alreadyGone: count(results, 'already_gone'),
         failed: count(results, 'failed'),
+        unknown: count(results, 'unknown'),
         notAttempted: count(results, 'not_attempted'),
       };
-      const complete = summary.failed === 0 && summary.notAttempted === 0;
+      const complete = summary.failed === 0 && summary.unknown === 0 && summary.notAttempted === 0;
       const state = complete ? 'succeeded' : unknownOutcome ? 'unknown' : 'failed';
       const settled = await this.operations.settle({ operationId: receipt.operationId, profileId: this.profile.id, channelId: this.profile.channelId, state });
       return {
@@ -123,9 +131,13 @@ export class SubscriptionCurationService {
   }
 
   private async snapshot(ids: string[]): Promise<{ subscriberChannelId: string; entries: Array<{ subscriptionId: string; status: 'subscribed' | 'gone'; channelId?: string; title?: string }> }> {
+    await this.principal.verifyPrincipal();
     const subscriberChannelId = await this.provider.getAuthenticatedChannelId();
     if (!subscriberChannelId) {
       throw new AppError('channel_required', 'The authorized account has no YouTube channel, so its subscriptions cannot be verified.', 'Run youtube-auth with the account that owns the subscriptions.', false);
+    }
+    if (subscriberChannelId !== this.profile.channelId) {
+      throw new AppError('ownership_required', 'The authenticated account is not the selected profile\'s channel, so its subscriptions cannot be curated.', 'Select the creator profile whose channel owns these subscriptions.', false);
     }
     const found = new Map((await this.provider.getSubscriptions(ids)).map((subscription) => [subscription.subscriptionId, subscription]));
     const foreign = ids.filter((id) => found.has(id) && found.get(id)!.subscriberChannelId !== subscriberChannelId);

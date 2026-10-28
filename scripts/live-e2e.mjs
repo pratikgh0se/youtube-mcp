@@ -20,7 +20,7 @@
 // BLOCKED (YouTube refused for an account-level reason), SKIPPED (optional input missing), FAIL.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -192,23 +192,28 @@ async function guard(tool, args, expectedCode, why) {
 }
 
 /** Retry an unrecorded verification (read-after-write lag). */
-async function retry(action, { attempts = 8, delayMs = 3_000 } = {}) {
+async function retry(action, { attempts = 8, delayMs = 3_000, retryable = () => true } = {}) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try { return await action(); } catch (error) {
       lastError = error;
-      if (quotaAborted) throw error;
+      if (quotaAborted || !retryable(error)) throw error;
     }
     await sleep(delayMs + attempt * 500);
   }
   throw lastError;
 }
 
+/** reconcile helper for idempotent changes that a following read-back verifies: the verification decides pass or fail. */
+const verifiedByReadback = async () => ({ unverified: true });
+
 /**
  * preflight -> approve -> execute, retried as a whole (approvals are single use and expire).
+ * Retries only definitive failures. After provider_outcome_unknown the change may already exist, so it is NEVER
+ * re-preflighted or re-executed: `reconcile(error)` (list and pick up the resource) decides, and no result means FAIL.
  * Per-tool results are recorded once the final outcome is known.
  */
-async function approved({ pre, preArgs, approve, exec, execArgs, attempts = 1, delayMs = 4_000, blocked, timeout }) {
+async function approved({ pre, preArgs, approve, exec, execArgs, attempts = 1, delayMs = 4_000, blocked, timeout, reconcile }) {
   let lastError;
   let done = {};
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -233,6 +238,15 @@ async function approved({ pre, preArgs, approve, exec, execArgs, attempts = 1, d
       lastError = error;
       lastError.phase = phase;
       if (quotaAborted) break;
+      if (error.code === 'provider_outcome_unknown') {
+        const reconciled = reconcile ? await Promise.resolve(reconcile(error)).catch(() => undefined) : undefined;
+        if (reconciled) {
+          for (const [tool, ms] of Object.entries(done)) record(tool, 'PASS', ms);
+          record(exec, 'PASS', 0, 'outcome was unknown; reconciled by listing the resource');
+          return reconciled;
+        }
+        break;
+      }
       if (attempt + 1 < attempts) await sleep(delayMs + attempt * 1_000);
     }
   }
@@ -265,7 +279,8 @@ function skipTools(tools, reason) {
 async function quietApproved(pre, preArgs, approve, exec, execArgs) {
   const preview = await retry(() => call(pre, preArgs), { attempts: 4 });
   await call(approve, { approvalId: preview.approvalId, confirm: true });
-  await retry(() => call(exec, { ...execArgs, approvalId: preview.approvalId, confirm: true }), { attempts: 3 });
+  // Approvals are single use: after provider_outcome_unknown never execute again; report it for manual reconciliation.
+  await retry(() => call(exec, { ...execArgs, approvalId: preview.approvalId, confirm: true }), { attempts: 3, retryable: (error) => error.code !== 'provider_outcome_unknown' });
 }
 const deletePlaylistQuiet = (playlistId) => quietApproved('youtube_preflight_delete_playlist', { playlistId }, 'youtube_approve', 'youtube_delete_playlist', { playlistId });
 const deleteCaptionQuiet = (videoId, captionId) => quietApproved('youtube_preflight_caption_delete', { videoId, captionId }, 'youtube_approve', 'youtube_delete_caption', { videoId, captionId });
@@ -490,7 +505,12 @@ async function captionsGroup() {
   await writeFile(second, srt(marker));
   const meta = { videoId, mimeType: 'application/octet-stream', language: 'en', name: 'youtube-mcp e2e' };
 
+  const knownCaptionIds = new Set(((await call('youtube_list_caption_tracks', { videoId })).items ?? []).map((track) => track.id));
   const captionId = (await approved({
+    reconcile: async () => {
+      const found = ((await call('youtube_list_caption_tracks', { videoId })).items ?? []).find((track) => !knownCaptionIds.has(track.id) && track.name === meta.name);
+      return found ? { captionId: found.id } : undefined;
+    },
     pre: 'youtube_preflight_caption_upload', preArgs: { ...meta, filePath: first }, approve: 'youtube_approve',
     exec: 'youtube_upload_caption', execArgs: { ...meta, filePath: first }, attempts: 2, delayMs: 8_000,
   })).captionId;
@@ -513,13 +533,16 @@ async function captionsGroup() {
 
   // Download and verify the updated content; processing may lag, so retry with a fresh output path each time.
   let downloaded = '';
+  const downloadedPaths = [];
+  addCleanup('downloaded caption files', async () => { await Promise.all(downloadedPaths.map((file) => rm(file, { force: true }))); });
   const deadline = Date.now() + 120_000;
   for (let attempt = 1; Date.now() < deadline; attempt += 1) {
-    const outputPath = join(mediaDir, `e2e-caption-download-${fileStamp}-${attempt}.srt`);
-    const args = { videoId, captionId, outputPath, format: 'srt' };
-    // Read-only: no preflight/approval. Ownership of the video and caption is verified server-side.
-    await step('youtube_download_caption', args, { attempts: 3, delayMs: 5_000 });
-    downloaded = await readFile(outputPath, 'utf8');
+    const fileName = `e2e-caption-download-${fileStamp}-${attempt}.srt`;
+    const args = { videoId, captionId, fileName, format: 'srt' };
+    // No preflight/approval. Ownership is verified server-side; the file lands in <state dir>/downloads/ and the tool returns its path.
+    const result = await step('youtube_download_caption', args, { attempts: 3, delayMs: 5_000, check: (v) => (typeof v.path === 'string' && v.path.endsWith(fileName) ? undefined : 'no path returned') });
+    downloadedPaths.push(result.path);
+    downloaded = await readFile(result.path, 'utf8');
     if (downloaded.includes(expected)) break;
     await sleep(10_000);
   }
@@ -527,7 +550,7 @@ async function captionsGroup() {
 
   await approved({
     pre: 'youtube_preflight_caption_delete', preArgs: { videoId, captionId }, approve: 'youtube_approve',
-    exec: 'youtube_delete_caption', execArgs: { videoId, captionId }, attempts: 3,
+    exec: 'youtube_delete_caption', execArgs: { videoId, captionId }, attempts: 3, reconcile: verifiedByReadback,
   });
   forget();
   await retry(async () => {
@@ -549,6 +572,10 @@ async function playlistsGroup() {
   const created = await approved({
     pre: 'youtube_preflight_create_playlist', preArgs: createArgs, approve: 'youtube_approve',
     exec: 'youtube_create_playlist', execArgs: createArgs,
+    reconcile: async () => {
+      const found = (await call('youtube_list_playlists', { maxResults: 50 })).items.find((item) => item.title === title);
+      return found ? { playlistId: found.id } : undefined;
+    },
   });
   const playlistId = created.playlistId;
   const forget = addCleanup(`playlist ${playlistId}`, () => deletePlaylistQuiet(playlistId));
@@ -558,6 +585,10 @@ async function playlistsGroup() {
   const add = (videoId) => approved({
     pre: 'youtube_preflight_add_playlist_item', preArgs: { playlistId, videoId }, approve: 'youtube_approve',
     exec: 'youtube_add_playlist_item', execArgs: { playlistId, videoId }, attempts: 4, delayMs: 4_000,
+    reconcile: async () => {
+      const found = (await call('youtube_list_playlist_items', { playlistId, maxResults: 50 })).items.find((item) => item.videoId === videoId);
+      return found ? { playlistItemId: found.id } : undefined;
+    },
   });
   const itemA = (await add(state.videoId)).playlistItemId;
   const itemB = (await add(state.publicVideoId)).playlistItemId;
@@ -569,7 +600,7 @@ async function playlistsGroup() {
   const reorderArgs = { playlistId, playlistItemId: itemB, position: 0 };
   await approved({
     pre: 'youtube_preflight_reorder_playlist_item', preArgs: reorderArgs, approve: 'youtube_approve',
-    exec: 'youtube_reorder_playlist_item', execArgs: reorderArgs, attempts: 3,
+    exec: 'youtube_reorder_playlist_item', execArgs: reorderArgs, attempts: 3, reconcile: verifiedByReadback,
   });
   await retry(async () => {
     const page = await call('youtube_list_playlist_items', { playlistId, maxResults: 50 });
@@ -579,7 +610,7 @@ async function playlistsGroup() {
   const newTitle = `${title} (renamed)`;
   await approved({
     pre: 'youtube_preflight_update_playlist', preArgs: { playlistId, title: newTitle }, approve: 'youtube_approve',
-    exec: 'youtube_update_playlist', execArgs: { playlistId, title: newTitle }, attempts: 3,
+    exec: 'youtube_update_playlist', execArgs: { playlistId, title: newTitle }, attempts: 3, reconcile: verifiedByReadback,
   });
   await retry(async () => {
     const got = await call('youtube_get_playlist', { playlistId });
@@ -588,7 +619,7 @@ async function playlistsGroup() {
 
   await approved({
     pre: 'youtube_preflight_remove_playlist_item', preArgs: { playlistId, playlistItemId: itemA }, approve: 'youtube_approve',
-    exec: 'youtube_remove_playlist_item', execArgs: { playlistId, playlistItemId: itemA }, attempts: 3,
+    exec: 'youtube_remove_playlist_item', execArgs: { playlistId, playlistItemId: itemA }, attempts: 3, reconcile: verifiedByReadback,
   });
   await retry(async () => {
     const page = await call('youtube_list_playlist_items', { playlistId, maxResults: 50 });
@@ -786,7 +817,9 @@ async function commentsFlow(commentVideoId) {
   const replyText = `youtube-mcp e2e reply ${stamp}`;
   // A private video rejects comments (the server reports provider_outcome_unknown), so the video must be unlisted or public.
   // Comments are only allowed on videos the selected channel owns (spam guard); a public video of another channel must be refused.
-  await guard('youtube_create_comment', { videoId: state.publicVideoId, text, confirm: true }, 'ownership_required', 'refused on a video the selected channel does not own');
+  // A syntactically valid but non-existent id: a regression in the ownership check can never post on a real stranger's video.
+  // The server retries the ownership read for a few seconds (read-after-write lag), so this guard takes about 7.5 s.
+  await guard('youtube_create_comment', { videoId: 'aaaaaaaaaaa', text, confirm: true }, 'ownership_required', 'refused on a video the selected channel does not own (non-existent id)');
   const created = await step('youtube_create_comment', { videoId: commentVideoId, text, confirm: true }, { check: (v) => (v.id ? undefined : 'no comment id') })
     .catch((error) => { const row = results.get('youtube_create_comment'); if (row) row.note = `${row.note} -- hint: YOUTUBE_E2E_COMMENT_VIDEO_ID must be an unlisted/public video owned by the channel with comments enabled`.slice(0, 600); throw error; });
   const commentId = created.id;
@@ -860,17 +893,17 @@ async function channelGroup() {
   const original = field(probe);
   if (original.length + suffix.length > 1000) throw new E2EError('channel description too long to append the e2e marker (1000 char limit)', 'description_too_long', 'youtube_preflight_update_channel');
   const changed = `${original}${suffix}`;
-  const forgetRestore = addCleanup('channel description', () => approvedQuiet(original));
+  const forgetRestore = addCleanup('channel description', () => approvedQuiet(original).catch((error) => { if (error.code !== 'invalid_input') throw error; }));
 
   await approved({
-    pre: 'youtube_preflight_update_channel', preArgs: { description: changed }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: changed }, attempts: 2,
+    pre: 'youtube_preflight_update_channel', preArgs: { description: changed }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: changed }, attempts: 2, reconcile: verifiedByReadback,
   });
   await retry(async () => {
     if (await readDescription() !== changed) throw new E2EError('description not updated yet', 'verify_failed', 'youtube_update_channel');
   }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `accepted but not visible: ${error.message}`));
 
   await approved({
-    pre: 'youtube_preflight_update_channel', preArgs: { description: original }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: original }, attempts: 2,
+    pre: 'youtube_preflight_update_channel', preArgs: { description: original }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: original }, attempts: 2, reconcile: verifiedByReadback,
   });
   forgetRestore();
   await retry(async () => {
@@ -879,7 +912,9 @@ async function channelGroup() {
   }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `restore not verified: ${error.message}`));
 }
 
-function approvedQuiet(description) {
+async function approvedQuiet(description) {
+  // Nothing to restore if the description already matches (the server refuses a no-op preview with invalid_input).
+  if (((await call('youtube_my_account')).description ?? '') === description) return;
   return quietApproved('youtube_preflight_update_channel', { description }, 'youtube_approve', 'youtube_update_channel', { description });
 }
 

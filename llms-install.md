@@ -28,4 +28,4 @@ Follow these steps in order. Do not write secrets into any file that is committe
    `YOUTUBE_OAUTH_CLIENT_SECRET_FILE=/abs/path/client_secret.json YOUTUBE_MCP_PROFILE_ID=creator-main npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz youtube-auth`
 6. Confirm the `youtube-mcp` server shows its tools, then try `youtube_auth_status`.
 
-Notes: every change to the user's YouTube account is previewed first and needs explicit approval. More detail is in [AGENTS.md](AGENTS.md) and [README.md](README.md).
+Notes: channel and content changes are previewed first and need explicit approval; viewer actions (subscribe, unsubscribe, rate, create comment) are single-step and need `confirm: true`. More detail is in [AGENTS.md](AGENTS.md) and [README.md](README.md).

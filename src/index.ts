@@ -78,7 +78,7 @@ async function main(arguments_: string[]): Promise<void> {
     uploadChunk: async (input) => client.resumableUpload(await oauth.getAccessToken('youtube.upload')).uploadChunk(input),
     cancel: async (sessionUrl) => client.resumableUpload(await oauth.getAccessToken('youtube.upload')).cancel(sessionUrl),
   }, creatorProfile, resources);
-  const content = new CreatorContentService(operations, resources, createCreatorContentProvider(oauth, client), selectedCreatorProfile(config));
+  const content = new CreatorContentService(operations, resources, createCreatorContentProvider(oauth, client), selectedCreatorProfile(config), config.stateDir);
   const playlists = new PlaylistService(operations, createPlaylistProvider(oauth, client), selectedCreatorProfile(config), resources);
   const moderation = new ModerationService(operations, createModerationProvider(oauth, client), creatorProfile, resources);
   const curationStore = new CurationStore(consumptionDatabasePath);
@@ -103,7 +103,7 @@ async function main(arguments_: string[]): Promise<void> {
     playlists,
     moderation,
     channelProfile: new ChannelProfileService(operations, createChannelProvider(oauth, client), creatorProfile, resources),
-    subscriptions: new SubscriptionCurationService(operations, createSubscriptionProvider(oauth, client), creatorProfile),
+    subscriptions: new SubscriptionCurationService(operations, createSubscriptionProvider(oauth, client), creatorProfile, resources),
     approvals: createApprovalTool(operations, creatorProfile),
     curation,
     importer: new TakeoutImporter(store),

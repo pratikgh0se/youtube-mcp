@@ -1,6 +1,6 @@
 # YouTube MCP
 
-**A local-first MCP server that lets AI assistants search YouTube, manage your channel and read your analytics, and asks you to approve every change first.**
+**A local-first MCP server that lets AI assistants search YouTube, manage your channel and read your analytics, and asks you to approve changes to your channel and content first.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 ![Node.js >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
@@ -29,7 +29,7 @@ Anything that changes your YouTube account goes through a **preflight, approve, 
 - Creator analytics: channel overview, top videos and audience retention for a date range, plus a flexible report (views by day, traffic sources, devices, countries, demographics and more).
 - Your uploaded videos, playlists and playlist items, caption tracks, and the comment moderation queue.
 
-**Write (your own account, every change needs approval)**
+**Write (your own account; channel and content changes need preview and approval, viewer actions need `confirm: true`)**
 - Uploads: resumable video uploads, with status check, resume and cancel. Uploads are private unless you explicitly ask to publish.
 - Videos: update title, description and other metadata, and set thumbnails.
 - Captions: upload, update, download and delete caption tracks.
@@ -52,6 +52,7 @@ Write tools are built so an AI client cannot make a surprise change:
 3. **Execute.** The write tool runs only with the same approved inputs and `confirm: true`.
 
 More guard rails, all from the code:
+- Viewer actions (`youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`), `youtube_create_comment` and the local curation and reset tools are single-step writes: no preflight, but they require a literal `confirm: true`.
 - Mutations are never retried automatically. Ambiguous outcomes are reconciled with a read.
 - Public visibility, scheduling, synthetic-media changes and banning an author need an explicit, elevated flag.
 - Comment deletion requires the comment to belong to your selected channel.
@@ -315,13 +316,13 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 | Area | Tools |
 | --- | --- |
 | Public reads (7) | `youtube_search` (filters: `order`, `publishedAfter`/`publishedBefore`, `videoDuration`, `channelId`, `regionCode`, `relevanceLanguage`, `safeSearch`, `pageToken`; 100 quota units), `youtube_trending` (most popular videos by region and category, 1 unit), `youtube_list_channel_videos` (recent uploads with statistics for any channel ID or @handle, about 3 units per page), `youtube_get_video`, `youtube_get_channel`, `youtube_get_comments`, `youtube_get_transcript` |
-| Your account (9) | Read: `youtube_my_account`, `youtube_list_subscriptions` (paginated; `details: true` adds `subscriberCount`, `videoCount` and `lastUploadAt`, costing about 1 extra quota unit per returned channel), `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` (only on videos your channel owns; other videos are refused with `ownership_required`). Bulk unsubscribe (preflight and approve): `youtube_preflight_unsubscribe_many`, `youtube_unsubscribe_many` (up to 100 subscriptions, 50 quota units each, per-item results, stops early on quota exhaustion) |
+| Your account (9) | Read: `youtube_my_account`, `youtube_list_subscriptions` (paginated; `details: true` adds `subscriberCount`, `videoCount` and `lastUploadAt`, costing about 1 extra quota unit per returned channel), `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` (only on videos your channel owns; other videos are refused with `ownership_required`). Bulk unsubscribe (preflight and approve): `youtube_preflight_unsubscribe_many`, `youtube_unsubscribe_many` (up to 100 subscriptions, 50 quota units each, per-item results: removed, already_gone, failed or unknown (uncertain outcome: reconcile with `youtube_list_subscriptions`); stops early on quota exhaustion) |
 | Creator analytics (4) | `youtube_creator_overview`, `youtube_creator_top_videos`, `youtube_creator_retention`, `youtube_creator_report` (allowlisted YouTube Analytics report: choose metrics, dimensions, filters, sort; invalid combinations are rejected up front) |
 | Channel profile (2) | `youtube_preflight_update_channel`, `youtube_update_channel`: edit your channel's description, keywords, country and default language (preflight and approve; other branding settings are preserved) |
 | Creator reads (10) | `youtube_list_owned_videos`, `youtube_get_owned_video`, `youtube_list_video_categories`, `youtube_list_playlists`, `youtube_get_playlist`, `youtube_list_playlist_items`, `youtube_list_caption_tracks`, `youtube_list_moderation_comments`, `youtube_get_moderation_comment`, `youtube_find_comment_reply` |
 | Uploads (7) | `youtube_preflight_upload`, `youtube_upload_video`, `youtube_get_upload_status`, `youtube_preflight_resume_upload`, `youtube_resume_upload`, `youtube_preflight_cancel_upload`, `youtube_cancel_upload` |
 | Video metadata, archive and thumbnails (6) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_archive_video`, `youtube_archive_video`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail` |
-| Captions (7) | `youtube_preflight_caption_upload`, `youtube_upload_caption`, `youtube_preflight_caption_update`, `youtube_update_caption`, `youtube_download_caption` (read-only, no approval), `youtube_preflight_caption_delete`, `youtube_delete_caption` |
+| Captions (7) | `youtube_preflight_caption_upload`, `youtube_upload_caption`, `youtube_preflight_caption_update`, `youtube_update_caption`, `youtube_download_caption` (no approval; writes a new file named by `fileName` into `<state dir>/downloads/` and returns its path), `youtube_preflight_caption_delete`, `youtube_delete_caption` |
 | Playlists (12) | `youtube_preflight_create_playlist`, `youtube_create_playlist`, `youtube_preflight_update_playlist`, `youtube_update_playlist`, `youtube_preflight_delete_playlist`, `youtube_delete_playlist`, `youtube_preflight_add_playlist_item`, `youtube_add_playlist_item`, `youtube_preflight_remove_playlist_item`, `youtube_remove_playlist_item`, `youtube_preflight_reorder_playlist_item`, `youtube_reorder_playlist_item` |
 | Comments and moderation (6) | `youtube_preflight_reply_to_comment`, `youtube_reply_to_comment`, `youtube_preflight_set_comment_moderation_status`, `youtube_set_comment_moderation_status`, `youtube_preflight_delete_comment`, `youtube_delete_comment` |
 | Approval (1) | `youtube_approve`: approves any pending preview by `approvalId` and shows its kind, target and exact change |

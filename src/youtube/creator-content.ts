@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { constants } from 'node:fs';
-import { lstat, open, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, unlink, type FileHandle } from 'node:fs/promises';
+import { basename, join, sep } from 'node:path';
 
 import type { ResourceService } from './resources.js';
 import { AppError, isDefinitiveRejection, providerOutcomeUnknownError, toSafeError } from '../errors.js';
@@ -36,7 +37,7 @@ export type ArchiveVideoInput = { videoId: string; approvalId?: string; confirm?
 export type ThumbnailInput = { videoId: string; filePath: string; mimeType: 'image/jpeg' | 'image/png'; approvalId?: string; confirm?: boolean };
 export type CaptionUploadInput = { videoId: string; filePath: string; mimeType: CaptionMimeType; language: string; name: string; isDraft?: boolean; approvalId?: string; confirm?: boolean };
 export type CaptionUpdateInput = CaptionUploadInput & { captionId: string };
-export type CaptionDownloadInput = { videoId: string; captionId: string; outputPath: string; format?: 'srt' | 'ttml' | 'vtt' };
+export type CaptionDownloadInput = { videoId: string; captionId: string; fileName: string; format?: 'srt' | 'ttml' | 'vtt' };
 export type CaptionDeleteInput = { videoId: string; captionId: string; approvalId?: string; confirm?: boolean };
 export type CaptionMimeType = 'application/octet-stream' | 'application/ttml+xml' | 'text/plain' | 'text/vtt';
 
@@ -77,6 +78,7 @@ export class CreatorContentService {
     private readonly resources: Pick<ResourceService, 'getOwnedVideo' | 'listCaptionTracks'>,
     private readonly provider: CreatorContentProvider,
     private readonly profile: CreatorProfile,
+    private readonly stateDir: string,
   ) {}
 
   async preflightMetadataUpdate(input: MetadataUpdateInput): Promise<OperationPreview> {
@@ -226,14 +228,16 @@ export class CreatorContentService {
     }
   }
 
-  /** Read-only on YouTube: no preview or approval. Ownership is verified and the local destination is created exclusively (never overwritten). */
-  async downloadCaption(input: CaptionDownloadInput): Promise<{ state: 'succeeded'; captionId: string; downloaded: true }> {
+  /** Read-only on YouTube: no preview or approval. Ownership is verified; the file is created exclusively (never overwritten) inside `<state dir>/downloads/`. */
+  async downloadCaption(input: CaptionDownloadInput): Promise<{ state: 'succeeded'; captionId: string; downloaded: true; path: string }> {
     try {
+      const fileName = sanitizeCaptionFileName(input.fileName);
       await this.requireOwnedCaption(input.videoId, input.captionId);
-      await requireAvailableCaptionDestination(input.outputPath);
+      const destination = join(await ensureDownloadsDirectory(this.stateDir), fileName);
+      await requireAvailableCaptionDestination(destination);
       const bytes = await this.provider.downloadCaption({ captionId: input.captionId, format: input.format });
-      await writeCaptionDestination(input.outputPath, bytes);
-      return { state: 'succeeded', captionId: input.captionId, downloaded: true };
+      await writeCaptionDestination(destination, bytes);
+      return { state: 'succeeded', captionId: input.captionId, downloaded: true, path: destination };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -489,6 +493,33 @@ async function withValidatedLocalFile<T>(
   }
 }
 
+const captionExtensions = ['.srt', '.vtt', '.sbv', '.txt'];
+
+/** Accepts a bare file name only: no separators, no leading dot, one of the caption extensions. */
+export function sanitizeCaptionFileName(name: string): string {
+  const lower = name.toLowerCase();
+  if (!name || name.length > 120 || name !== basename(name) || /[\\/\0]/.test(name) || name.startsWith('.') || !captionExtensions.some((ext) => lower.endsWith(ext)) || name === '..') {
+    throw new AppError('invalid_input', 'fileName must be a plain file name ending in .srt, .vtt, .sbv or .txt, with no directory parts.', 'Pass only a file name such as captions.vtt; files are written to the downloads folder in the state directory.', false);
+  }
+  return name;
+}
+
+/** Creates `<state dir>/downloads` (0700) and returns its real path, refusing a downloads directory that resolves outside the state directory. */
+async function ensureDownloadsDirectory(stateDir: string): Promise<string> {
+  try {
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const downloads = join(stateDir, 'downloads');
+    await mkdir(downloads, { recursive: true, mode: 0o700 });
+    const realDownloads = await realpath(downloads);
+    const expected = join(await realpath(stateDir), 'downloads');
+    if (realDownloads !== expected || !(realDownloads + sep).startsWith(expected + sep)) throw invalidCaptionDestinationError();
+    return realDownloads;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw invalidCaptionDestinationError();
+  }
+}
+
 async function requireAvailableCaptionDestination(outputPath: string): Promise<void> {
   try {
     await lstat(outputPath);
@@ -515,10 +546,11 @@ async function writeCaptionDestination(outputPath: string, bytes: string | Uint8
     await handle.writeFile(bytes);
     await handle.chmod(0o600);
   } catch {
+    await handle.close().catch(() => undefined);
+    await unlink(outputPath).catch(() => undefined);
     throw invalidCaptionDestinationError();
-  } finally {
-    await handle.close();
   }
+  await handle.close();
 }
 
 function normalizeVideo(video: CreatorVideo): CreatorVideo {
@@ -561,8 +593,8 @@ function requiredId(value: string | undefined, resource: string): string { if (!
 function ownershipRequiredError(): AppError { return new AppError('ownership_required', 'This resource is not owned by the selected creator channel.', 'Select the owning creator profile or use an owned resource ID.', false); }
 function approvalRequiredError(): AppError { return new AppError('approval_required', 'This operation requires an approved preview.', 'Preflight, approve, and repeat with confirm: true.', false); }
 function invalidFileError(): AppError { return new AppError('invalid_file', 'The selected local media file is missing, empty, or exceeds the supported size.', 'Choose a readable supported local file and preflight again.', false); }
-function captionDestinationExistsError(): AppError { return new AppError('caption_destination_exists', 'The caption download destination already exists.', 'Choose a new destination path; existing files and symbolic links are never overwritten.', false); }
-function invalidCaptionDestinationError(): AppError { return new AppError('invalid_caption_destination', 'The caption download destination could not be created safely.', 'Choose a writable new local destination and preflight again.', false); }
+function captionDestinationExistsError(): AppError { return new AppError('caption_destination_exists', 'The caption download destination already exists.', 'Choose a new fileName; existing files and symbolic links are never overwritten.', false); }
+function invalidCaptionDestinationError(): AppError { return new AppError('invalid_caption_destination', 'The caption download destination could not be created safely.', 'Check that the downloads folder in the state directory is writable and not a symbolic link elsewhere, then retry.', false); }
 function providerError(resource: string): AppError { return new AppError('provider_error', `The YouTube provider did not return a valid ${resource}.`, 'Try again. If the problem continues, verify the provider configuration.', true); }
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException { return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT'; }
 function isAlreadyExistsError(error: unknown): error is NodeJS.ErrnoException { return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'EEXIST'; }

@@ -19,7 +19,7 @@ Pick a path. You can start with A and add B later.
 
 You also need Node.js 22.13 or newer (`node --version` to check).
 
-Every change to your YouTube account is previewed and needs your approval first. Nothing happens by surprise.
+Changes to your channel and content are previewed and need your approval first. Viewer actions (subscribe, unsubscribe, rate, comment) need an explicit `confirm: true`. Nothing happens by surprise.
 
 ## 2. Create a Google Cloud project
 

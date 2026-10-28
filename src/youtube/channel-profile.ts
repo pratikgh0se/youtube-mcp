@@ -11,7 +11,7 @@ type CreatorProfile = ConnectionProfile & { purpose: 'creator'; channelId: strin
 export type ChannelFields = { description?: string; keywords?: string; country?: string; defaultLanguage?: string };
 export type UpdateChannelInput = ChannelFields & { approvalId?: string; confirm?: boolean };
 type BrandingSettings = Record<string, unknown> & { channel?: Record<string, unknown> };
-export type ProviderChannel = { id: string; etag?: string; brandingSettings: BrandingSettings };
+export type ProviderChannel = { id: string; etag?: string; title?: string; brandingSettings: BrandingSettings };
 export type ChannelProvider = {
   getChannel(channelId: string): Promise<ProviderChannel | undefined>;
   /** Sends the COMPLETE brandingSettings object; channels.update replaces the whole part. */
@@ -79,6 +79,11 @@ export class ChannelProfileService {
     if (!channel || channel.id !== this.profile.channelId) {
       throw new AppError('ownership_required', 'This channel is not the selected creator channel.', 'Select the owning creator profile.', false);
     }
+    // channels.update replaces the whole brandingSettings part, so an update built from an empty or partial read would wipe the channel's settings.
+    const brandingChannel = asRecord(channel.brandingSettings.channel);
+    if (!channel.title || !brandingChannel || Object.keys(brandingChannel).length === 0) {
+      throw new AppError('provider_error', 'YouTube returned incomplete channel settings.', 'YouTube returned incomplete channel settings; nothing was changed. Try again later.', true);
+    }
     return channel;
   }
 
@@ -139,11 +144,12 @@ export function createChannelProvider(oauth: Pick<OAuthService, 'getAccessToken'
   }
   return {
     async getChannel(channelId) {
-      const response = await (await api()).channels.list({ part: 'brandingSettings', id: channelId });
+      const response = await (await api()).channels.list({ part: 'snippet,brandingSettings', id: channelId });
       const record = asRecord(response.data.items?.[0]);
       const id = stringValue(record?.id);
       const branding = asRecord(record?.brandingSettings);
-      return id ? { id, ...(stringValue(record?.etag) ? { etag: stringValue(record?.etag)! } : {}), brandingSettings: (branding ?? {}) as BrandingSettings } : undefined;
+      const title = stringValue(asRecord(record?.snippet)?.title);
+      return id ? { id, ...(title ? { title } : {}), ...(stringValue(record?.etag) ? { etag: stringValue(record?.etag)! } : {}), brandingSettings: (branding ?? {}) as BrandingSettings } : undefined;
     },
     async updateBranding(input) {
       const response = await (await api()).channels.update({ part: ['brandingSettings'], requestBody: { id: input.id, brandingSettings: input.brandingSettings } });

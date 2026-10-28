@@ -102,7 +102,7 @@ function fakeDependencies(): McpDependencies {
       uploadCaption: async () => ({ operationId: 'caption-upload-approval', state: 'succeeded' as const, captionId: 'caption-2' }),
       preflightCaptionUpdate: async () => ({ approvalId: 'caption-update-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'caption.update', targetId: 'caption-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_list_caption_tracks', arguments: { videoId: 'video-1' } } }),
       updateCaption: async () => ({ operationId: 'caption-update-approval', state: 'succeeded' as const, captionId: 'caption-1' }),
-      downloadCaption: async () => ({ state: 'succeeded' as const, captionId: 'caption-1', downloaded: true as const }),
+      downloadCaption: async () => ({ state: 'succeeded' as const, captionId: 'caption-1', downloaded: true as const, path: '/state/downloads/a.vtt' }),
       preflightCaptionDelete: async () => ({ approvalId: 'caption-delete-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'caption.delete', targetId: 'caption-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_list_caption_tracks', arguments: { videoId: 'video-1' } } }),
       deleteCaption: async () => ({ operationId: 'caption-delete-approval', state: 'succeeded' as const, captionId: 'caption-1', deleted: true as const }),
     },
@@ -220,7 +220,8 @@ describe('createMcpServer', () => {
     for (const removed of ['youtube_approve_upload', 'youtube_approve_playlist', 'youtube_approve_creator_content', 'youtube_approve_moderation', 'youtube_preflight_caption_download']) {
       expect(names).not.toContain(removed);
     }
-    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.annotations).toMatchObject({ readOnlyHint: true });
+    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.annotations).toMatchObject({ destructiveHint: false });
+    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.annotations?.readOnlyHint).toBeUndefined();
     expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.inputSchema.required).not.toContain('approvalId');
     const approved = await client.callTool({ name: 'youtube_approve', arguments: { approvalId: 'a', confirm: true } });
     expect(approved.isError).not.toBe(true);

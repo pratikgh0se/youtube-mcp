@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 **Breaking changes.** Tool count is now 79.
 - Removed tools: `youtube_approve_upload`, `youtube_approve_playlist`, `youtube_approve_moderation`, `youtube_approve_creator_content`. Use the single `youtube_approve` for every preflight preview.
+- `youtube_download_caption` now takes `fileName` (a plain name ending in .srt, .vtt, .sbv or .txt) instead of `outputPath`, writes only into `<state dir>/downloads/` (created 0700) and returns the absolute `path`. Its readOnlyHint annotation is removed because it writes a local file.
 - `youtube_download_caption` no longer needs an approval step, so `youtube_preflight_caption_download` is no longer part of the flow.
 - `youtube_create_comment` now works on your own videos only.
 - Node.js 22.13 or newer is required (local storage uses `node:sqlite`).
@@ -29,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - one `youtube_approve` tool replaces the four per-area approve tools (breaking, see above)
+- Safety model wording: channel and content writes use preflight, `youtube_approve`, execute. Viewer actions (subscribe, unsubscribe, rate_video), `youtube_create_comment` and local curation and reset tools are single-step writes that require `confirm: true`.
+- `youtube_unsubscribe_many` reports `unknown` (not `failed`) for items whose outcome is uncertain after a server or network error, with an action pointing to `youtube_list_subscriptions`. Bulk unsubscribe now also verifies that the signed-in account is the selected profile's channel.
+- `youtube_creator_report` defaults its end date to the Pacific (America/Los_Angeles) day and fails with `provider_error` on an analytics response with missing column names.
+- `youtube_update_channel` refuses an incomplete channel read instead of building an update from it.
 - caption download needs no approval; `youtube_create_comment` is limited to your own videos (breaking)
 - the server launches from the release tarball; first start takes about 9 s, later starts use the npm cache
 - local storage uses Node's built-in `node:sqlite` instead of the native `better-sqlite3` addon; Node.js 22.13+ required (breaking)

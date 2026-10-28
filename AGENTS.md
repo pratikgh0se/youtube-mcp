@@ -57,7 +57,7 @@ npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtu
 | OpenCode, OpenClaw, Hermes | `opencode.json`, `openclaw.json`, `hermes.yaml` |
 | Anything else | `generic-stdio.json` |
 
-Safety: write tools follow preflight, `youtube_approve` (one tool for every kind of change), execute. Caption download is read-only and needs no approval. `youtube_create_comment` works only on videos the selected channel owns. Show the user each preview and never pass `confirm: true` without their approval.
+Safety: channel and content writes (uploads, metadata, thumbnails, captions, playlists, moderation, channel edit, bulk unsubscribe) follow preflight, `youtube_approve` (one tool for every kind of change), execute. Viewer actions (`youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`), `youtube_create_comment` and the local curation and reset tools are single-step writes that require `confirm: true`. Caption download needs no approval; it takes a `fileName` and writes into `<state dir>/downloads/`. `youtube_create_comment` works only on videos the selected channel owns. Show the user each preview and never pass `confirm: true` without their approval.
 
 ## Part 2. Working on this repo
 
