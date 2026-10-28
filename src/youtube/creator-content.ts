@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { constants } from 'node:fs';
 import { lstat, open, type FileHandle } from 'node:fs/promises';
 
 import type { ResourceService } from './resources.js';
-import { AppError, providerOutcomeUnknownError, toSafeError } from '../errors.js';
+import { AppError, isDefinitiveRejection, providerOutcomeUnknownError, toSafeError } from '../errors.js';
 import type { OAuthService } from '../auth/oauth.js';
 import type { CaptionTrack, ConnectionProfile, OperationPreview, OperationReceipt } from '../types.js';
 import { OperationService } from '../operations/service.js';
+import { retryWhileMissing } from './read-after-write.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
 
 type CreatorProfile = ConnectionProfile & { purpose: 'creator'; channelId: string };
@@ -260,15 +262,16 @@ export class CreatorContentService {
   private async providerOutcome<T>(operationId: string, reconciliation: { tool: string; arguments: Record<string, string> }, action: () => Promise<T>): Promise<T> {
     try {
       return await action();
-    } catch {
-      await this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'unknown' });
-      throw providerOutcomeUnknownError(operationId, reconciliation);
+    } catch (error) {
+      const definitive = isDefinitiveRejection(error);
+      await this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state: definitive ? 'failed' : 'unknown' });
+      throw definitive ? toSafeError(error) : providerOutcomeUnknownError(operationId, reconciliation);
     }
   }
 
   private async currentVideo(videoId: string): Promise<CreatorVideo> {
     await this.requireOwnedVideo(videoId);
-    const current = await this.provider.getVideo({ videoId });
+    const current = await retryWhileMissing(() => this.provider.getVideo({ videoId }));
     if (!current || current.id !== videoId || current.channelId !== this.profile.channelId || !current.snippet.title) throw ownershipRequiredError();
     return normalizeVideo(current);
   }
@@ -280,8 +283,7 @@ export class CreatorContentService {
 
   private async requireOwnedCaption(videoId: string, captionId: string): Promise<CaptionTrack> {
     await this.requireOwnedVideo(videoId);
-    const captions = await this.resources.listCaptionTracks({ videoId });
-    const caption = captions.items.find((candidate) => candidate.id === captionId && candidate.videoId === videoId);
+    const caption = await retryWhileMissing(async () => (await this.resources.listCaptionTracks({ videoId })).items.find((candidate) => candidate.id === captionId && candidate.videoId === videoId));
     if (!caption) throw ownershipRequiredError();
     return caption;
   }
@@ -312,7 +314,7 @@ export function createCreatorContentProvider(
       return (response.data.items ?? []).flatMap(normalizeProviderVideo)[0];
     },
     async setThumbnail(input) {
-      const response = await (await api()).thumbnails.set({ videoId: input.videoId, media: { mimeType: input.mimeType, body: input.bytes } });
+      const response = await (await api()).thumbnails.set({ videoId: input.videoId, media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) } });
       return idResponse(response.data);
     },
     async updateVideo(input) {
@@ -324,14 +326,14 @@ export function createCreatorContentProvider(
       return (response.data.items ?? []).flatMap(normalizeProviderCaption);
     },
     async insertCaption(input) {
-      const response = await (await api()).captions.insert({ part: ['snippet'], requestBody: { snippet: captionSnippet(input) }, media: { mimeType: input.mimeType, body: input.bytes } });
+      const response = await (await api()).captions.insert({ part: ['snippet'], requestBody: { snippet: captionSnippet(input) }, media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) } });
       return idResponse(response.data);
     },
     async updateCaption(input) {
       const response = await (await api()).captions.update({
         part: [input.isDraft === undefined ? 'id' : 'snippet'],
         requestBody: { id: input.captionId, ...(input.isDraft !== undefined ? { snippet: { isDraft: input.isDraft } } : {}) },
-        media: { mimeType: input.mimeType, body: input.bytes },
+        media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) },
       });
       return idResponse(response.data);
     },

@@ -46,6 +46,8 @@ export type AppError = {
   retryable: boolean;
   operationId?: string;
   reconciliation?: OperationReconciliation;
+  status?: number;
+  reason?: string;
 };
 
 export type QuotaContext = {

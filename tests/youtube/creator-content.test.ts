@@ -11,6 +11,12 @@ import { createCreatorContentProvider, CreatorContentService } from '../../src/y
 import { YouTubeClient, type YouTubeDataApi } from '../../src/youtube/client.js';
 import type { AppConfig } from '../../src/types.js';
 
+async function streamBytes(body: unknown): Promise<number[]> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Buffer>) chunks.push(Buffer.from(chunk));
+  return [...Buffer.concat(chunks)];
+}
+
 const directories: string[] = [];
 const creator = { id: 'creator-a', purpose: 'creator' as const, channelId: 'channel-a' };
 
@@ -366,10 +372,43 @@ describe('CreatorContentService', () => {
     await provider.updateCaption(base as never);
     await provider.updateCaption({ ...base, isDraft: true } as never);
 
-    expect(updateRequests).toEqual([
-      { part: ['id'], requestBody: { id: 'caption-1' }, media: { mimeType: 'text/vtt', body: bytes } },
-      { part: ['snippet'], requestBody: { id: 'caption-1', snippet: { isDraft: true } }, media: { mimeType: 'text/vtt', body: bytes } },
+    expect(updateRequests.map((request) => ({ part: request.part, requestBody: request.requestBody, mimeType: (request.media as { mimeType: string }).mimeType }))).toEqual([
+      { part: ['id'], requestBody: { id: 'caption-1' }, mimeType: 'text/vtt' },
+      { part: ['snippet'], requestBody: { id: 'caption-1', snippet: { isDraft: true } }, mimeType: 'text/vtt' },
     ]);
+    for (const request of updateRequests) {
+      await expect(streamBytes((request.media as { body: unknown }).body)).resolves.toEqual([1, 2, 3]);
+    }
+  });
+
+  it('sends thumbnail and caption insert media as a Node stream, not a raw Uint8Array', async () => {
+    const requests: Array<{ kind: string; body: unknown }> = [];
+    const api = {
+      search: { list: async () => ({ data: { items: [] } }) },
+      videos: { list: async () => ({ data: { items: [] } }), update: async () => ({ data: {} }) },
+      channels: { list: async () => ({ data: { items: [] } }) },
+      commentThreads: { list: async () => ({ data: { items: [] } }) },
+      videoCategories: { list: async () => ({ data: { items: [] } }) },
+      playlists: { list: async () => ({ data: { items: [] } }) },
+      playlistItems: { list: async () => ({ data: { items: [] } }) },
+      thumbnails: { set: async (request: { media: { body: unknown } }) => { requests.push({ kind: 'thumbnail', body: request.media.body }); return { data: { id: 'v' } }; } },
+      captions: {
+        list: async () => ({ data: { items: [] } }), download: async () => ({ data: '' }), delete: async () => ({ data: {} }), update: async () => ({ data: {} }),
+        insert: async (request: { media: { body: unknown } }) => { requests.push({ kind: 'caption', body: request.media.body }); return { data: { id: 'c' } }; },
+      },
+    } as unknown as YouTubeDataApi;
+    const config: AppConfig = { stateDir: '/tmp/youtube-mcp-tests', diagnostics: () => 'safe' };
+    const provider = createCreatorContentProvider({ getAccessToken: async () => 'access-token' }, new YouTubeClient(config, { createAuthorizedApi: () => api, createPublicApi: () => api }));
+    const bytes = new Uint8Array([9, 8, 7]);
+
+    await provider.setThumbnail({ videoId: 'video-1', bytes, mimeType: 'image/png' } as never);
+    await provider.insertCaption({ videoId: 'video-1', bytes, mimeType: 'text/vtt', language: 'en', name: 'English' } as never);
+
+    expect(requests.map((request) => request.kind)).toEqual(['thumbnail', 'caption']);
+    for (const request of requests) {
+      expect(typeof (request.body as { pipe?: unknown }).pipe).toBe('function');
+      await expect(streamBytes(request.body)).resolves.toEqual([9, 8, 7]);
+    }
   });
 
   it('rejects caption changes for IDs absent from the owned video before calling the provider', async () => {

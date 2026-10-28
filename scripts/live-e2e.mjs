@@ -129,7 +129,11 @@ async function call(name, args = {}, timeout = 120_000) {
   if (result.isError) {
     const code = parsed?.code ?? 'tool_error';
     if (code === 'quota_exhausted') quotaAborted = true;
-    throw new E2EError(`${code}: ${parsed?.message ?? text.slice(0, 200)}`, code, name);
+    const failure = new E2EError(`${code}: ${parsed?.message ?? text.slice(0, 200)}`, code, name);
+    failure.status = parsed?.status;
+    failure.reason = parsed?.reason;
+    failure.action = parsed?.action;
+    throw failure;
   }
   if (parsed === undefined) throw new E2EError(`${name} returned no JSON result.`, 'no_json', name);
   const units = parsed?.context?.quotaUnits ?? QUOTA[name] ?? 1;
@@ -429,21 +433,15 @@ async function editVideoGroup() {
   await ff(['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=1', '-frames:v', '1', '-q:v', '5', thumbPath]);
   const thumb = { videoId: state.videoId, filePath: thumbPath, mimeType: 'image/jpeg' };
   try {
-    await approved({ pre: 'youtube_preflight_set_thumbnail', preArgs: thumb, approve: 'youtube_approve_creator_content', exec: 'youtube_set_thumbnail', execArgs: thumb });
-  } catch {
-    // The server maps every provider failure to provider_outcome_unknown. Ask the API directly to classify it.
-    let verdict;
-    try {
-      const api = await directApi();
-      await api.thumbnails.set({ videoId: state.videoId, media: { mimeType: 'image/jpeg', body: createReadStream(thumbPath) } });
-      verdict = { status: 'FAIL', note: 'MCP set_thumbnail failed but the same call made directly with a stream body succeeds (server bug: it passes a Uint8Array media body, which googleapis rejects with "part.body.pipe is not a function")' };
-    } catch (error) {
-      verdict = /forbidden/i.test(providerReason(error))
-        ? { status: 'BLOCKED', note: `YouTube refused thumbnails.set for this channel (${providerReason(error)}); needs a phone-verified channel. Also note the server passes a Uint8Array body, so the happy path stays unproven until the channel is eligible and the server is fixed.` }
-        : { status: 'FAIL', note: `thumbnail failed: ${providerReason(error)}` };
+    await approved({
+      pre: 'youtube_preflight_set_thumbnail', preArgs: thumb, approve: 'youtube_approve_creator_content', exec: 'youtube_set_thumbnail', execArgs: thumb,
+      blocked: (error) => error.status === 403 && error.reason === 'forbidden',
+    });
+  } catch (error) {
+    if (error.status === 403 && error.reason === 'forbidden') {
+      const current = results.get('youtube_set_thumbnail');
+      results.set('youtube_set_thumbnail', { status: 'BLOCKED', ms: current?.ms ?? 0, note: `HTTP ${error.status} ${error.reason}: ${error.action ?? 'channel not eligible for custom thumbnails'}` });
     }
-    const current = results.get('youtube_set_thumbnail');
-    results.set('youtube_set_thumbnail', { status: verdict.status, ms: current?.ms ?? 0, note: verdict.note });
   }
 }
 
@@ -458,26 +456,10 @@ async function captionsGroup() {
   await writeFile(second, srt(marker));
   const meta = { videoId, mimeType: 'application/octet-stream', language: 'en', name: 'youtube-mcp e2e' };
 
-  let captionId;
-  let seeded = false;
-  try {
-    captionId = (await approved({
-      pre: 'youtube_preflight_caption_upload', preArgs: { ...meta, filePath: first }, approve: 'youtube_approve_creator_content',
-      exec: 'youtube_upload_caption', execArgs: { ...meta, filePath: first }, attempts: 2, delayMs: 8_000,
-    })).captionId;
-  } catch {
-    // Explain the failure, then seed a caption directly so the remaining caption tools can still be exercised.
-    const api = await directApi();
-    try {
-      const inserted = await api.captions.insert({ part: ['snippet'], requestBody: { snippet: { videoId, language: 'en', name: meta.name } }, media: { mimeType: meta.mimeType, body: await readFile(first, 'utf8') } });
-      captionId = inserted.data.id;
-      seeded = true;
-      const current = results.get('youtube_upload_caption');
-      results.set('youtube_upload_caption', { status: 'FAIL', ms: current?.ms ?? 0, note: 'MCP upload_caption failed but the same insert made directly with a string body succeeds (server bug: it passes a Uint8Array media body, which googleapis rejects with "part.body.pipe is not a function"). Caption seeded directly for the remaining tools.' });
-    } catch (error) {
-      throw new E2EError(`caption upload failed in MCP and directly: ${providerReason(error)}`, 'provider_error', 'youtube_upload_caption');
-    }
-  }
+  const captionId = (await approved({
+    pre: 'youtube_preflight_caption_upload', preArgs: { ...meta, filePath: first }, approve: 'youtube_approve_creator_content',
+    exec: 'youtube_upload_caption', execArgs: { ...meta, filePath: first }, attempts: 2, delayMs: 8_000,
+  })).captionId;
   const forget = addCleanup(`caption ${captionId}`, () => deleteCaptionQuiet(videoId, captionId));
 
   await step('youtube_list_caption_tracks', { videoId }, {
@@ -492,8 +474,6 @@ async function captionsGroup() {
     });
     updated = true;
   } catch {
-    const current = results.get('youtube_update_caption');
-    if (seeded && current?.status === 'FAIL') current.note = `${current.note} (likely the same Uint8Array media-body bug as upload_caption)`;
   }
   const expected = updated ? marker : 'Hello from youtube-mcp e2e';
 

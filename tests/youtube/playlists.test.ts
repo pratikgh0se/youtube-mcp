@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OperationService } from '../../src/operations/service.js';
 import { OperationStore } from '../../src/operations/store.js';
 import { AppError } from '../../src/errors.js';
+import { setReadAfterWriteSleep } from '../../src/youtube/read-after-write.js';
 import { createPlaylistProvider, PlaylistService } from '../../src/youtube/playlists.js';
 import { YouTubeClient, type YouTubeDataApi } from '../../src/youtube/client.js';
 import type { AppConfig } from '../../src/types.js';
@@ -194,5 +195,62 @@ describe('PlaylistService', () => {
     await expect(playlists.preflightRemove({ playlistId: 'playlist-1', playlistItemId: 'playlist-item-1' }))
       .rejects.toMatchObject({ code: 'ownership_required' });
     expect(provider.removePlaylistItem).not.toHaveBeenCalled();
+  });
+
+  it('retries a not-found-yet playlist with bounded backoff, then succeeds', async () => {
+    const delays: number[] = [];
+    setReadAfterWriteSleep(async (ms) => { delays.push(ms); });
+    try {
+      let calls = 0;
+      const { playlists } = await service({ getPlaylist: vi.fn(async (playlistId: string) => (++calls < 3 ? undefined : { id: playlistId, channelId: 'creator-channel', title: 'Series', privacyStatus: 'private' as const })) });
+
+      await expect(playlists.preflightUpdate({ playlistId: 'playlist-1', title: 'Updated' })).resolves.toMatchObject({ kind: 'playlist.update' });
+      expect(calls).toBe(3);
+      expect(delays).toEqual([500, 1000]);
+    } finally {
+      setReadAfterWriteSleep(async () => undefined);
+    }
+  });
+
+  it('gives up after four retries when the playlist never appears', async () => {
+    const delays: number[] = [];
+    setReadAfterWriteSleep(async (ms) => { delays.push(ms); });
+    try {
+      const getPlaylist = vi.fn(async () => undefined);
+      const { playlists } = await service({ getPlaylist });
+
+      await expect(playlists.preflightUpdate({ playlistId: 'playlist-1', title: 'Updated' })).rejects.toMatchObject({ code: 'ownership_required' });
+      expect(getPlaylist).toHaveBeenCalledTimes(5);
+      expect(delays).toEqual([500, 1000, 2000, 4000]);
+    } finally {
+      setReadAfterWriteSleep(async () => undefined);
+    }
+  });
+
+  it('does not retry when the playlist exists but belongs to another channel', async () => {
+    const getPlaylist = vi.fn(async (playlistId: string) => ({ id: playlistId, channelId: 'someone-else', title: 'Series', privacyStatus: 'private' as const }));
+    const { playlists } = await service({ getPlaylist });
+
+    await expect(playlists.preflightUpdate({ playlistId: 'playlist-1', title: 'Updated' })).rejects.toMatchObject({ code: 'ownership_required' });
+    expect(getPlaylist).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a clean Google 4xx rejection with its reason instead of outcome-unknown', async () => {
+    const rejection = Object.assign(new Error('forbidden'), { code: 403, errors: [{ reason: 'forbidden' }] });
+    const { playlists } = await service({ createPlaylist: vi.fn(async () => { throw rejection; }) });
+    const preview = await playlists.preflightCreate({ title: 'New series' });
+    await approve(playlists, preview.approvalId);
+
+    await expect(playlists.create({ title: 'New series', approvalId: preview.approvalId, confirm: true }))
+      .rejects.toMatchObject({ code: 'provider_error', status: 403, reason: 'forbidden' });
+  });
+
+  it('keeps provider_outcome_unknown when the write fails without any Google response', async () => {
+    const { playlists } = await service({ createPlaylist: vi.fn(async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); }) });
+    const preview = await playlists.preflightCreate({ title: 'New series' });
+    await approve(playlists, preview.approvalId);
+
+    await expect(playlists.create({ title: 'New series', approvalId: preview.approvalId, confirm: true }))
+      .rejects.toMatchObject({ code: 'provider_outcome_unknown' });
   });
 });

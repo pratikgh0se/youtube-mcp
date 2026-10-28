@@ -12,6 +12,7 @@ import type {
   VideoCategory,
 } from '../types.js';
 import { YouTubeClient } from './client.js';
+import { retryWhileMissing } from './read-after-write.js';
 
 export type OwnedResource = {
   item: OwnedVideo;
@@ -83,11 +84,14 @@ export class ResourceService {
   async getOwnedVideo(videoId: string): Promise<OwnedResource> {
     try {
       const profile = await this.selectedProfile();
-      const response = await (await this.authorized()).videos.list({
-        part: 'snippet,status,processingDetails',
-        id: videoId,
+      const api = await this.authorized();
+      const video = await retryWhileMissing(async () => {
+        const response = await api.videos.list({
+          part: 'snippet,status,processingDetails',
+          id: videoId,
+        });
+        return (response.data.items ?? []).flatMap(normalizeOwnedVideo)[0];
       });
-      const video = (response.data.items ?? []).flatMap(normalizeOwnedVideo)[0];
       if (!video || video.channelId !== profile.channelId) throw ownershipRequiredError();
       return { item: video, profile, ...freshness(this.now()) };
     } catch (error) {
@@ -190,7 +194,7 @@ export class ResourceService {
   async findCommentReply(input: { parentId: string; text: string }): Promise<CommentReplySearchResource> {
     try {
       const profile = await this.selectedProfile();
-      const parent = await this.readModerationComment(input.parentId);
+      const parent = await retryWhileMissing(() => this.readModerationComment(input.parentId));
       if (!parent || parent.channelId !== profile.channelId) throw ownershipRequiredError();
       const api = await this.commentApi();
       const matches: ModerationCommentDetail[] = [];
