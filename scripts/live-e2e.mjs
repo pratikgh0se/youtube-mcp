@@ -7,6 +7,7 @@
 //   YOUTUBE_E2E_REUSE_VIDEO_ID               skip the (1600-unit) upload; reuse a video from a previous run
 //   YOUTUBE_E2E_COMMENT_VIDEO_ID             unlisted/public video owned by the channel that accepts comments;
 //                                            without it the comment + moderation group is SKIPPED
+//   YOUTUBE_E2E_GROUPS                       comma list of groups to run (account is always run); others are SKIPPED
 //   YOUTUBE_E2E_TAKEOUT                      path to a Takeout watch-history .json/.html instead of the synthetic one
 //   YOUTUBE_E2E_OUT_DIR                      media + report directory (default: <os tmpdir>/youtube-mcp-e2e)
 //   YOUTUBE_E2E_FFMPEG                       ffmpeg binary (default: /opt/homebrew/bin/ffmpeg or `ffmpeg`)
@@ -14,11 +15,10 @@
 // Result statuses: PASS, PASS-GUARD (correct refusal because the precondition cannot be produced),
 // BLOCKED (YouTube refused for an account-level reason), SKIPPED (optional input missing), FAIL.
 import { execFile } from 'node:child_process';
-import { createReadStream, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -34,6 +34,7 @@ const env = process.env;
 const confirmChannel = env.YOUTUBE_E2E_CONFIRM_CHANNEL;
 const reuseVideoId = env.YOUTUBE_E2E_REUSE_VIDEO_ID || undefined;
 const commentVideoId = env.YOUTUBE_E2E_COMMENT_VIDEO_ID || undefined;
+const groupFilter = env.YOUTUBE_E2E_GROUPS ? new Set(env.YOUTUBE_E2E_GROUPS.split(',').map((g) => g.trim()).filter(Boolean)) : undefined;
 const takeoutOverride = env.YOUTUBE_E2E_TAKEOUT || undefined;
 const outDir = env.YOUTUBE_E2E_OUT_DIR || join(tmpdir(), 'youtube-mcp-e2e');
 const mediaDir = join(outDir, 'e2e-media');
@@ -229,6 +230,10 @@ async function approved({ pre, preArgs, approve, exec, execArgs, attempts = 1, d
 }
 
 async function runGroup(name, action) {
+  if (groupFilter && name !== 'account' && !groupFilter.has(name)) {
+    skipTools(GROUPS[name] ?? [], "not in this run's groups (YOUTUBE_E2E_GROUPS)");
+    return;
+  }
   const started = Date.now();
   log(`group ${name}`);
   try {
@@ -265,24 +270,6 @@ async function ff(args) {
   await execFileAsync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', ...args], { maxBuffer: 10 * 1024 * 1024 });
 }
 
-const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-let directApiPromise;
-/**
- * Diagnostic-only access to the YouTube API through the built server modules (same OAuth state as the server).
- * Used solely to explain a failed MCP tool (the server hides provider reasons) and to seed fixtures for tools
- * that depend on a broken upstream tool. Never used to make a failing tool look like it passed.
- */
-function directApi() {
-  directApiPromise ??= (async () => {
-    const load = (path) => import(pathToFileURL(join(repoRoot, 'dist', path)).href);
-    const [{ OAuthService }, { loadConfig }, { YouTubeClient }] = await Promise.all([load('auth/oauth.js'), load('config.js'), load('youtube/client.js')]);
-    const config = loadConfig(process.env, homedir());
-    return new YouTubeClient(config).authorized(await new OAuthService(config).getAccessToken('youtube.write'));
-  })();
-  return directApiPromise;
-}
-const providerReason = (error) => `${error.code ?? ''} ${error.errors?.[0]?.reason ?? error.response?.data?.error?.errors?.[0]?.reason ?? ''} ${String(error.message).slice(0, 160)}`.trim();
-
 const state = { videoId: undefined, channelId: undefined, publicVideoId: PUBLIC_VIDEO_CANDIDATES[0], uploadId: undefined };
 
 function fatal(message) {
@@ -306,6 +293,7 @@ async function main() {
   state.channelId = account.id;
   log(`guard passed for channel "${account.title}" (${account.id})`);
 
+  if (reuseVideoId) state.videoId = reuseVideoId;
   await runGroup('account', async () => {
     await step('youtube_auth_status', {}, { check: (v) => (v.authorized && v.scopeReadiness?.ready ? undefined : 'not authorized or scopes not ready') });
     await step('youtube_my_account', {}, { check: (v) => (v.id === state.channelId ? undefined : 'channel id mismatch') });
@@ -579,6 +567,9 @@ async function commentsGroup() {
     skipTools(GROUPS.comments, 'set YOUTUBE_E2E_COMMENT_VIDEO_ID (an unlisted video owned by the channel that accepts comments) to enable');
     return;
   }
+  const owned = await call('youtube_get_owned_video', { videoId: commentVideoId });
+  log(`comment video ${commentVideoId}: privacyStatus=${owned.item?.privacyStatus} processingStatus=${owned.item?.processingStatus}`);
+  if (owned.item?.privacyStatus === 'private') throw new E2EError('comment video is private; comments cannot work', 'video_private', 'youtube_create_comment');
   const text = `youtube-mcp e2e comment ${stamp}`;
   const replyText = `youtube-mcp e2e reply ${stamp}`;
   // A private video rejects comments (the server reports provider_outcome_unknown), so the video must be unlisted or public.
