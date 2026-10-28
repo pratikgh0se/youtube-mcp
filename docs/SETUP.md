@@ -17,7 +17,7 @@ Pick a path. You can start with A and add B later.
 
 **Cost: free.** You do not need to add a billing account. The limit is a daily quota, not money (see [section 11](#11-limits-to-know)).
 
-You also need Node.js 22 or newer (`node --version` to check).
+You also need Node.js 22.13 or newer (`node --version` to check).
 
 Every change to your YouTube account is previewed and needs your approval first. Nothing happens by surprise.
 

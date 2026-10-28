@@ -3,7 +3,7 @@
 **A local-first MCP server that lets AI assistants search YouTube, manage your channel and read your analytics, and asks you to approve every change first.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
-![Node.js >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)
+![Node.js >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 ![MCP server](https://img.shields.io/badge/MCP-server-blue.svg)
 
 YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 72 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
@@ -61,13 +61,13 @@ Full details are in [docs/README.md](docs/README.md).
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.13 or newer
 - A Google Cloud project with the **YouTube Data API v3** enabled (and the **YouTube Analytics API** for the creator analytics tools)
 - A YouTube Data API key for public reads, and an OAuth desktop client for account and creator tools
 
 ## Install in your AI agent
 
-No npm publish is needed. Every route below runs the server from the prebuilt tarball attached to the GitHub release with `npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz --transport stdio`, except the Claude Desktop bundle, which carries its own copy. You need Node.js 22+ on your `PATH` for the `npx` routes. Create your Google credentials first with the [beginner setup guide](docs/SETUP.md) (short version: [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
+No npm publish is needed. Every route below runs the server from the prebuilt tarball attached to the GitHub release with `npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz --transport stdio`, except the Claude Desktop bundle, which carries its own copy. You need Node.js 22.13+ on your `PATH` for the `npx` routes. Create your Google credentials first with the [beginner setup guide](docs/SETUP.md) (short version: [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
 
 | Agent | One-line install |
 | --- | --- |
@@ -103,9 +103,9 @@ Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `
 
 ### Claude Desktop
 
-Download `youtube-mcp-<version>-<platform>-<arch>.mcpb` from [GitHub Releases](https://github.com/pratikgh0se/youtube-mcp/releases/latest) and double-click it. Claude Desktop shows an install dialog and asks for your API key. The bundle includes the server, so it needs no `npx` at run time. The macOS Apple Silicon build comes first. Other platforms are produced by the CI release builds.
+Download `youtube-mcp-<version>.mcpb` (one universal bundle for macOS, Windows and Linux) from [GitHub Releases](https://github.com/pratikgh0se/youtube-mcp/releases/latest) and double-click it. Claude Desktop shows an install dialog and asks for your API key. The bundle includes the server, so it needs no `npx` at run time.
 
-Fallback if there is no bundle for your platform: add [`configs/claude-desktop.json`](configs/claude-desktop.json) to `claude_desktop_config.json` and restart. The first start downloads the package, which can take a few seconds.
+Fallback if you prefer not to use the bundle: add [`configs/claude-desktop.json`](configs/claude-desktop.json) to `claude_desktop_config.json` and restart. The first start downloads the package, which can take a few seconds.
 
 ```json
 {

@@ -4,7 +4,7 @@ Two audiences. Part 1 is for an agent installing this MCP server for a user. Par
 
 ## Part 1. Installing this server for a user
 
-Requirements: Node.js 22+ on `PATH`, and a YouTube Data API v3 key from the user. Never ask the user to paste a key into a file that is committed. To help the user get the keys, point them to [docs/SETUP.md](docs/SETUP.md) (step-by-step Google setup).
+Requirements: Node.js 22.13+ on `PATH`, and a YouTube Data API v3 key from the user. Never ask the user to paste a key into a file that is committed. To help the user get the keys, point them to [docs/SETUP.md](docs/SETUP.md) (step-by-step Google setup).
 
 ### Canonical launch
 

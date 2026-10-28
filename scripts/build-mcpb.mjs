@@ -1,19 +1,10 @@
 #!/usr/bin/env node
-// Builds a per-platform Claude Desktop bundle (.mcpb). better-sqlite3 is a
-// native addon, so each bundle is built on (and only valid for) its own OS/arch.
+// Builds the platform-independent Claude Desktop bundle (.mcpb). Storage uses Node's
+// built-in node:sqlite, so no production dependency is native and one bundle fits every OS/arch.
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-// Bump ELECTRON when Claude Desktop's Electron changes (ABI = its process.versions.modules).
-const ELECTRON = { runtime: 'electron', target: '44.9.3', abi: 149 };
-const NATIVE_TARGETS = [
-  { runtime: 'node', target: '22.0.0', abi: 127 },
-  { runtime: 'node', target: '24.0.0', abi: 137 },
-  { runtime: 'node', target: '26.0.0', abi: 147 },
-  ELECTRON,
-];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(root, '.mcpb-build');
@@ -48,8 +39,7 @@ for (const item of ['bin', 'dist', 'package.json', 'package-lock.json', 'LICENSE
 }
 cpSync(join(root, 'mcpb', '.mcpbignore'), join(stage, '.mcpbignore'));
 
-// 3. Staged manifest, narrowed to this platform
-manifest.compatibility = { ...manifest.compatibility, platforms: [process.platform] };
+// 3. Staged manifest (universal: darwin, win32, linux)
 writeFileSync(join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
 // 4. Strip lifecycle scripts so the production install does not run tsc
@@ -58,51 +48,24 @@ delete stagedPkg.scripts;
 delete stagedPkg.devDependencies;
 writeFileSync(join(stage, 'package.json'), JSON.stringify(stagedPkg, null, 2) + '\n');
 
-// 5. Production install (fetches the better-sqlite3 prebuilt binary for this platform/arch)
+// 5. Production install; fail if any native addon slipped back in
 run(npm, ['ci', '--omit=dev'], stage);
 
-const nativeOk = (function find(d) {
+const nativeFiles = [];
+(function scan(d) {
   for (const e of readdirSync(d, { withFileTypes: true })) {
     const p = join(d, e.name);
-    if (e.isDirectory() ? find(p) : e.name === 'better_sqlite3.node') return true;
+    if (e.isDirectory()) scan(p);
+    else if (e.name.endsWith('.node') || e.name === 'binding.gyp') nativeFiles.push(p);
   }
-  return false;
-})(join(stage, 'node_modules', 'better-sqlite3'));
-if (!nativeOk) throw new Error('better_sqlite3.node not found in staged node_modules');
-
-// 5b. Bundle better-sqlite3 binaries for several ABIs; picked at runtime by src/sqlite/open-database.ts
-const sqliteDir = join(stage, 'node_modules', 'better-sqlite3');
-const prebuildInstall = [
-  join(sqliteDir, 'node_modules', 'prebuild-install', 'bin.js'),
-  join(stage, 'node_modules', 'prebuild-install', 'bin.js'),
-].find((p) => existsSync(p));
-if (!prebuildInstall) throw new Error('prebuild-install not found in staged node_modules');
-const gotAbis = [];
-for (const t of NATIVE_TARGETS) {
-  const tmp = join(buildDir, `prebuild-${t.abi}`);
-  cpSync(sqliteDir, tmp, { recursive: true });
-  rmSync(join(tmp, 'build'), { recursive: true, force: true });
-  try {
-    run(process.execPath, [prebuildInstall, '--runtime', t.runtime, '--target', t.target,
-      '--arch', process.arch, '--platform', process.platform, '--verbose'], tmp);
-    const built = join(tmp, 'build', 'Release', 'better_sqlite3.node');
-    if (!existsSync(built)) throw new Error('no better_sqlite3.node produced');
-    const dest = join(stage, 'native', `abi-${t.abi}-${process.platform}-${process.arch}`);
-    mkdirSync(dest, { recursive: true });
-    copyFileSync(built, join(dest, 'better_sqlite3.node'));
-    gotAbis.push(`${t.abi} (${t.runtime} ${t.target})`);
-  } catch (err) {
-    console.warn(`\nWARNING: no prebuilt better-sqlite3 for ${t.runtime} ${t.target} (ABI ${t.abi}) on ${process.platform}-${process.arch}: ${err.message}`);
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+})(join(stage, 'node_modules'));
+if (nativeFiles.length > 0) {
+  throw new Error(`bundle must be platform-independent, but found native files:\n${nativeFiles.join('\n')}`);
 }
-if (gotAbis.length < 2) throw new Error(`only ${gotAbis.length} native targets bundled; need at least 2`);
-console.log(`\nBundled native ABIs: ${gotAbis.join(', ')}`);
 
 // 6. Validate and pack
 run(npx, ['-y', MCPB, 'validate', join(stage, 'manifest.json')]);
-const out = join(buildDir, `youtube-mcp-${pkg.version}-${process.platform}-${process.arch}.mcpb`);
+const out = join(buildDir, `youtube-mcp-${pkg.version}.mcpb`);
 run(npx, ['-y', MCPB, 'pack', stage, out]);
 if (!existsSync(out)) throw new Error(`pack did not produce ${out}`);
 console.log(`\nBuilt ${out}`);

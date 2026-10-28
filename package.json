@@ -29,7 +29,7 @@
     "scripts"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -49,13 +49,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "better-sqlite3": "^12.6.2",
     "googleapis": "^171.4.0",
     "youtube-transcript": "^1.2.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",

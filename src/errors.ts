@@ -256,6 +256,22 @@ function isInvalidGrant(error: unknown): boolean {
   return candidate.error === 'invalid_grant' || candidate.response?.data?.error === 'invalid_grant';
 }
 
+function isSqliteFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = String((error as { code?: unknown }).code ?? '');
+  return code === 'ERR_SQLITE_ERROR' || /^SQLITE_/.test(code);
+}
+
+/** Never includes the database path or the underlying SQLite message. */
+export function storageUnavailableError(): AppError {
+  return new AppError(
+    'storage_unavailable',
+    'Local storage could not be opened or written.',
+    'Check that the state directory exists and is writable, then try again. Use Node.js 22.13 or newer.',
+    false,
+  );
+}
+
 export function toSafeError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
@@ -265,5 +281,9 @@ export function toSafeError(error: unknown): AppError {
     return quotaExceededError(httpStatusOf(error));
   }
 
-  return isInvalidGrant(error) ? reauthorizationRequiredError() : providerError(error);
+  if (isInvalidGrant(error)) {
+    return reauthorizationRequiredError();
+  }
+
+  return isSqliteFailure(error) ? storageUnavailableError() : providerError(error);
 }

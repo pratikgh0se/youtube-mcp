@@ -18,7 +18,7 @@ Every Phase 2 provider mutation uses a preflight → approve → execute flow. A
 
 ## Requirements and install
 
-Use Node.js 22 or newer. From a checkout:
+Use Node.js 22.13 or newer. From a checkout:
 
 ```bash
 npm install

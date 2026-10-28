@@ -1,4 +1,4 @@
-name: Build release assets (MCPB bundles and npm tarball)
+name: Build release assets (MCPB bundle and npm tarball)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing tag to attach the bundles to (leave empty to only build)
+        description: Existing tag to attach the bundle to (leave empty to only build)
         required: false
 
 permissions:
@@ -18,15 +18,8 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-          - os: macos-15-intel
-          - os: windows-latest
-          - os: ubuntu-latest
-    runs-on: ${{ matrix.os }}
+    # One universal bundle: node:sqlite is built into Node, so nothing native is shipped.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,7 +34,7 @@ jobs:
           subject-path: .mcpb-build/*.mcpb
       - uses: actions/upload-artifact@v4
         with:
-          name: mcpb-${{ matrix.os }}
+          name: mcpb
           path: .mcpb-build/*.mcpb
           if-no-files-found: error
           # .mcpb-build is a dot directory, which upload-artifact skips by default.

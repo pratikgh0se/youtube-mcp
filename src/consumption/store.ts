@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import Database from 'better-sqlite3';
-import { openDatabase } from '../sqlite/open-database.js';
+import { openDatabase, type SqliteDatabase } from '../sqlite/open-database.js';
 
 import { AppError } from '../errors.js';
 
@@ -66,7 +65,7 @@ const schema = `
 `;
 
 export class ConsumptionStore {
-  private database?: Database.Database;
+  private database?: SqliteDatabase;
 
   constructor(private readonly databasePath: string) {}
 
@@ -123,8 +122,8 @@ export class ConsumptionStore {
       `);
       let imported = 0;
 
-      database.transaction((records: WatchEvent[]) => {
-        for (const event of records) {
+      database.transaction(() => {
+        for (const event of events) {
           const parameters = toDatabaseParameters(event);
           if (existing.get({ sourceKey: event.sourceKey })) {
             refresh.run(parameters);
@@ -132,7 +131,7 @@ export class ConsumptionStore {
             imported += insert.run(parameters).changes;
           }
         }
-      })(events);
+      });
 
       return { imported, skipped: events.length - imported };
     } catch (error) {
@@ -219,7 +218,7 @@ export class ConsumptionStore {
     `).all(parameters);
   }
 
-  private readyDatabase(): Database.Database {
+  private readyDatabase(): SqliteDatabase {
     this.initialize();
     return this.database!;
   }
@@ -262,7 +261,7 @@ export class ConsumptionStore {
           rename.run({ sourceKey: row.sourceKey, canonicalKey });
         }
       }
-    })();
+    });
   }
 }
 

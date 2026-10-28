@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import Database from 'better-sqlite3';
-import { openDatabase } from '../sqlite/open-database.js';
+import { openDatabase, type SqliteDatabase } from '../sqlite/open-database.js';
 
 export type CurationCandidateSource = 'allowlist' | 'playlist' | 'search';
 
@@ -83,7 +82,7 @@ const schema = `
 `;
 
 export class CurationStore {
-  private database?: Database.Database;
+  private database?: SqliteDatabase;
 
   constructor(private readonly databasePath: string, private readonly now: () => Date = () => new Date()) {}
 
@@ -183,10 +182,10 @@ export class CurationStore {
         candidates: database.prepare('DELETE FROM curation_candidates WHERE profile_id = ?').run(profileId).changes,
         policies: database.prepare('DELETE FROM curation_policies WHERE profile_id = ?').run(profileId).changes,
       },
-    }))();
+    }));
   }
 
-  private ready(): Database.Database {
+  private ready(): SqliteDatabase {
     this.initialize();
     return this.database!;
   }

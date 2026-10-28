@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- local storage now uses Node's built-in `node:sqlite` instead of the native `better-sqlite3` addon; Node.js 22.13 or newer is required
+- the Claude Desktop `.mcpb` is a single universal bundle (`youtube-mcp-<version>.mcpb`) with no native binaries
+- SQLite open/IO failures surface as `storage_unavailable` (path omitted); a Node without `node:sqlite` is reported at startup and by `youtube_auth_status`
+
 ## 0.3.0 (unreleased)
 
 - Faster first start: launch from the release tarball (about 9 s cold start)
