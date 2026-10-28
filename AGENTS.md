@@ -22,9 +22,9 @@ No npm publish is involved. `npx` clones, installs and builds the repo from GitH
 | Variable | Needed for |
 | --- | --- |
 | `YOUTUBE_API_KEY` | Public tools: search, videos, channels, public comments, transcripts. Required. |
-| `YOUTUBE_OAUTH_CLIENT_SECRET_FILE` | Account and creator tools. Absolute path to a Google Desktop OAuth client JSON. |
-| `YOUTUBE_MCP_PROFILE_ID` | Creator tools. A name the user chooses, e.g. `creator-main`. |
-| `YOUTUBE_MCP_CHANNEL_ID` | Creator tools. Channel ID starting with `UC`. The signed-in account must own it. |
+| `YOUTUBE_OAUTH_CLIENT_SECRET_FILE` | Account and creator tools. Absolute path to a Google Desktop OAuth client JSON. Required in the Claude Code plugin. |
+| `YOUTUBE_MCP_PROFILE_ID` | Creator tools. A name the user chooses, e.g. `creator-main`. Required in the Claude Code plugin. |
+| `YOUTUBE_MCP_CHANNEL_ID` | Creator tools. Channel ID starting with `UC`. The signed-in account must own it. Required in the Claude Code plugin. |
 | `YOUTUBE_MCP_STATE_DIR` | Optional. Where tokens and local state live. Default `~/.youtube-mcp`. |
 
 An empty string counts as unset for all five.

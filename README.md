@@ -92,7 +92,7 @@ claude plugin marketplace add pratikgh0se/youtube-mcp
 claude plugin install youtube-mcp@youtube-mcp
 ```
 
-Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp`. Claude Code asks for your API key (stored in your OS credential store) and the optional creator settings (OAuth client file, profile name, channel ID, state directory). Leave optional ones blank to skip them. The plugin only holds config. The server itself still runs through `npx`.
+Or inside Claude Code: `/plugin marketplace add pratikgh0se/youtube-mcp`, then `/plugin install youtube-mcp@youtube-mcp`. Claude Code asks for your API key (stored in your OS credential store) and four more settings: OAuth client file, profile name and channel ID are required, and the state directory is optional (leave it blank to use `~/.youtube-mcp`). The plugin only holds config. The server itself still runs through `npx`.
 
 ### Claude Desktop
 

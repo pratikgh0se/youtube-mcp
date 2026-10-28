@@ -16,22 +16,22 @@
       "sensitive": true
     },
     {
-      "name": "OAuth client JSON path (optional)",
+      "name": "OAuth client JSON path",
       "description": "Absolute path to the Desktop OAuth client JSON. Only needed for account and creator tools.",
       "envVar": "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"
     },
     {
-      "name": "Profile name (optional)",
+      "name": "Profile name",
       "description": "A name you choose, for example creator-main. Only needed for creator tools.",
       "envVar": "YOUTUBE_MCP_PROFILE_ID"
     },
     {
-      "name": "Channel ID (optional)",
+      "name": "Channel ID",
       "description": "Your YouTube channel ID, starting with UC. Only needed for creator tools.",
       "envVar": "YOUTUBE_MCP_CHANNEL_ID"
     },
     {
-      "name": "State directory (optional)",
+      "name": "State directory",
       "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
       "envVar": "YOUTUBE_MCP_STATE_DIR"
     }

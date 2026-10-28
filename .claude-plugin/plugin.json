@@ -21,26 +21,26 @@
     },
     "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": {
       "type": "file",
-      "title": "OAuth client JSON file (optional)",
-      "description": "Desktop OAuth client JSON from Google Cloud. Only needed for account and creator tools. Leave empty for public tools only.",
-      "default": ""
+      "title": "OAuth client JSON file",
+      "description": "Desktop OAuth client JSON downloaded from Google Cloud. Used to sign in to your channel for playlists, analytics, uploads and comment replies.",
+      "required": true
     },
     "YOUTUBE_MCP_PROFILE_ID": {
       "type": "string",
-      "title": "Profile name (optional)",
-      "description": "A name you choose, for example creator-main. Keeps local state separate per profile. Only needed for creator tools.",
-      "default": ""
+      "title": "Profile name",
+      "description": "A short name you choose, e.g. my-channel. Keeps local state separate per channel.",
+      "required": true
     },
     "YOUTUBE_MCP_CHANNEL_ID": {
       "type": "string",
-      "title": "Channel ID (optional)",
-      "description": "Your YouTube channel ID, starting with UC. The signed-in Google account must own it. Only needed for creator tools.",
-      "default": ""
+      "title": "Channel ID",
+      "description": "Your channel ID starting with UC (YouTube → Settings → Advanced settings). The signed-in Google account must own it.",
+      "required": true
     },
     "YOUTUBE_MCP_STATE_DIR": {
       "type": "directory",
-      "title": "State directory (optional)",
-      "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
+      "title": "State directory",
+      "description": "Where the sign-in token, approvals and local history live. Leave empty to use ~/.youtube-mcp.",
       "default": ""
     }
   }
