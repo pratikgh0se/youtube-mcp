@@ -3,7 +3,7 @@
 Follow these steps in order. Do not write secrets into any file that is committed.
 
 1. Check Node.js: run `node --version`. It must be 22 or newer. If not, tell the user to install Node.js 22+ and stop.
-2. Ask the user for a YouTube Data API v3 key (Google Cloud console, "YouTube Data API v3", then Credentials, then API key). Optional, only for account and creator tools: a Desktop OAuth client JSON path, a profile name (e.g. `creator-main`) and a channel ID starting with `UC`.
+2. If the user has no keys yet, point them to [docs/SETUP.md](docs/SETUP.md) for the step-by-step Google setup. Ask the user for a YouTube Data API v3 key (Google Cloud console, "YouTube Data API v3", then Credentials, then API key). Optional, only for account and creator tools: a Desktop OAuth client JSON path, a profile name (e.g. `creator-main`) and a channel ID starting with `UC`.
 3. Warm the cache so the first start does not time out (takes about a minute): `npx -y github:pratikgh0se/youtube-mcp#v0.2.0 --version`
 4. Add this server to the MCP settings file (`cline_mcp_settings.json`, opened from the MCP Servers panel, Configure, "Configure MCP Servers"). Use exactly this launch:
 

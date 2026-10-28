@@ -6,9 +6,16 @@
 ![Node.js >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)
 ![MCP server](https://img.shields.io/badge/MCP-server-blue.svg)
 
-YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 74 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
+YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 76 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
 
 Anything that changes your YouTube account goes through a **preflight, approve, execute** flow. The assistant first shows you exactly what it is about to do, and nothing happens until the exact previewed change is approved.
+
+## Quick start
+
+1. **Get your keys.** Follow the [beginner setup guide](docs/SETUP.md) (5 minutes for public research, about 15 with your own channel).
+2. **Install in your agent.** Pick yours in [Install in your AI agent](#install-in-your-ai-agent).
+3. **Sign in once** (only for your own channel): run the `youtube-auth` command in [Account and creator tools](#account-and-creator-tools-authorize-once).
+4. **Ask your agent:** "Check my YouTube auth status", then "Search YouTube for talks about MCP".
 
 ## What it can do
 
@@ -60,7 +67,7 @@ Full details are in [docs/README.md](docs/README.md).
 
 ## Install in your AI agent
 
-No npm publish is needed. Every route below runs the server straight from GitHub with `npx -y github:pratikgh0se/youtube-mcp#v0.2.0 --transport stdio`, except the Claude Desktop bundle, which carries its own copy. You need Node.js 22+ on your `PATH` for the `npx` routes. Create your Google credentials first (see [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
+No npm publish is needed. Every route below runs the server straight from GitHub with `npx -y github:pratikgh0se/youtube-mcp#v0.2.0 --transport stdio`, except the Claude Desktop bundle, which carries its own copy. You need Node.js 22+ on your `PATH` for the `npx` routes. Create your Google credentials first with the [beginner setup guide](docs/SETUP.md) (short version: [Google credentials](#google-credentials)). You need at least a YouTube Data API key.
 
 | Agent | One-line install |
 | --- | --- |
@@ -134,7 +141,7 @@ startup_timeout_sec = 180
 gemini extensions install https://github.com/pratikgh0se/youtube-mcp
 ```
 
-Gemini prompts for your API key (kept in the system keychain) and the optional creator settings. Change them later with `gemini extensions config youtube-mcp`. A plain `settings.json` entry is in [`configs/gemini-settings.json`](configs/gemini-settings.json).
+Gemini prompts for your API key (kept in the system keychain, required) and the OAuth client file, profile name and channel ID (needed for your channel's tools; see the [setup guide](docs/SETUP.md)). Change them later with `gemini extensions config youtube-mcp`. A plain `settings.json` entry is in [`configs/gemini-settings.json`](configs/gemini-settings.json).
 
 Note: Google stopped serving Gemini CLI to AI Pro, Ultra and free individual users on 2026-06-18. Paid API-key and enterprise users keep it ([source](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)). Everyone else should use Antigravity CLI below.
 
@@ -228,6 +235,8 @@ This opens a browser for Google consent on a local `127.0.0.1` callback and requ
 
 ### 1. Create credentials
 
+New to Google Cloud? Use the step-by-step [beginner setup guide](docs/SETUP.md). The short version:
+
 In the [Google Cloud console](https://console.cloud.google.com/):
 
 1. Create or pick a project, then enable **YouTube Data API v3** and **YouTube Analytics API**.
@@ -299,7 +308,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 
 ## Tools
 
-74 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
+76 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
 
 | Area | Tools |
 | --- | --- |
@@ -308,7 +317,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 | Creator analytics (3) | `youtube_creator_overview`, `youtube_creator_top_videos`, `youtube_creator_retention` |
 | Creator reads (10) | `youtube_list_owned_videos`, `youtube_get_owned_video`, `youtube_list_video_categories`, `youtube_list_playlists`, `youtube_get_playlist`, `youtube_list_playlist_items`, `youtube_list_caption_tracks`, `youtube_list_moderation_comments`, `youtube_get_moderation_comment`, `youtube_find_comment_reply` |
 | Uploads (8) | `youtube_preflight_upload`, `youtube_approve_upload`, `youtube_upload_video`, `youtube_get_upload_status`, `youtube_preflight_resume_upload`, `youtube_resume_upload`, `youtube_preflight_cancel_upload`, `youtube_cancel_upload` |
-| Video metadata and thumbnails (5) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail`, `youtube_approve_creator_content` |
+| Video metadata, archive and thumbnails (7) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_archive_video`, `youtube_archive_video`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail`, `youtube_approve_creator_content` |
 | Captions (8) | `youtube_preflight_caption_upload`, `youtube_upload_caption`, `youtube_preflight_caption_update`, `youtube_update_caption`, `youtube_preflight_caption_download`, `youtube_download_caption`, `youtube_preflight_caption_delete`, `youtube_delete_caption` |
 | Playlists (13) | `youtube_preflight_create_playlist`, `youtube_create_playlist`, `youtube_preflight_update_playlist`, `youtube_update_playlist`, `youtube_preflight_delete_playlist`, `youtube_delete_playlist`, `youtube_preflight_add_playlist_item`, `youtube_add_playlist_item`, `youtube_preflight_remove_playlist_item`, `youtube_remove_playlist_item`, `youtube_preflight_reorder_playlist_item`, `youtube_reorder_playlist_item`, `youtube_approve_playlist` |
 | Comments and moderation (7) | `youtube_preflight_reply_to_comment`, `youtube_reply_to_comment`, `youtube_preflight_set_comment_moderation_status`, `youtube_set_comment_moderation_status`, `youtube_preflight_delete_comment`, `youtube_delete_comment`, `youtube_approve_moderation` |

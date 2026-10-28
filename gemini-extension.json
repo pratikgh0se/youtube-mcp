@@ -17,17 +17,17 @@
     },
     {
       "name": "OAuth client JSON path",
-      "description": "Absolute path to the Desktop OAuth client JSON. Only needed for account and creator tools.",
+      "description": "Absolute path to the Desktop OAuth client JSON. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"
     },
     {
       "name": "Profile name",
-      "description": "A name you choose, for example creator-main. Only needed for creator tools.",
+      "description": "A name you choose, for example creator-main. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_MCP_PROFILE_ID"
     },
     {
       "name": "Channel ID",
-      "description": "Your YouTube channel ID, starting with UC. Only needed for creator tools.",
+      "description": "Your YouTube channel ID, starting with UC. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_MCP_CHANNEL_ID"
     },
     {
