@@ -112,10 +112,10 @@ Run this in a terminal, using your own paths and values:
 ```bash
 YOUTUBE_OAUTH_CLIENT_SECRET_FILE=/absolute/path/to/client_secret.json \
 YOUTUBE_MCP_PROFILE_ID=creator-main \
-npx -y github:pratikgh0se/youtube-mcp#v0.2.0 youtube-auth
+npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz youtube-auth
 ```
 
-The first run downloads and builds the server, which takes about a minute.
+The first run downloads the prebuilt server, which takes about 9 seconds.
 
 What you will see:
 
@@ -220,7 +220,7 @@ This server uploads as private by default, so the lock does not block normal use
 | `quotaExceeded` | You used the day's quota | Wait until midnight Pacific Time, or request more via the [audit and quota form](https://support.google.com/youtube/contact/yt_api_form) |
 | `invalid_grant`, token expired, or "reauthorization required" | In Testing mode the sign-in expires after 7 days. Or you revoked access | Run the `youtube-auth` command from section 8 again |
 | "Access blocked" or "not a test user" | Your Gmail is not on the test users list | Go to **Google Auth Platform**, **Audience**, **Test users**, add your address, and sign in again |
-| Claude Code shows the server failed or timed out on first install | The first `npx` run downloads and builds, and can take longer than 30 seconds | Run `npx -y github:pratikgh0se/youtube-mcp#v0.2.0 --version` once in a terminal to warm the cache, then `/reload-plugins` |
+| Claude Code shows the server failed or timed out on first install | The first `npx` run downloads the server tarball (about 9 s cold start), which can be slow on a poor connection | Run `npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz --version` once in a terminal to warm the cache, then `/reload-plugins` |
 | Sign-in works but tools say no token | `YOUTUBE_MCP_PROFILE_ID` or `YOUTUBE_MCP_STATE_DIR` differs between the sign-in and the agent | Use identical values in both ([section 8](#8-sign-in-once)) |
 | API key errors, "API not enabled", or "key not valid" | The API is not enabled in this project, or the key is restricted to a different API | Check section 3 and that the key's API restriction includes **YouTube Data API v3** |
 

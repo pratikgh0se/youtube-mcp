@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.3.0 (unreleased)
+
+- Faster first start: launch from the release tarball (about 9 s cold start)
+- TODO (orchestrator): list the rest of the 0.3.0 changes here (smoke fixes, required plugin settings, live e2e script, media-body/error/retry fixes, archive tools, docs/SETUP.md, tool trim to 72 tools with a single `youtube_approve`)
+
 ### Fixed
 - harden release safety and verification
 - preserve exact, persisted Phase 2 approval bindings across MCP restarts

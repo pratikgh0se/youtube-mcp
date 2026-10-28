@@ -10,3 +10,4 @@ secret.json
 .DS_Store
 /.yt-mcp/
 .mcpb-build/
+.tarball-build/

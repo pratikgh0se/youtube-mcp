@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { loadClientTemplate } from '../../src/transports/http.js';
 
+const VERSION = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
+const TARBALL = `https://github.com/pratikgh0se/youtube-mcp/releases/download/v${VERSION}/youtube-mcp-${VERSION}.tgz`;
 const ALLOWED_ENV_KEYS = [
   'YOUTUBE_API_KEY',
   'YOUTUBE_MCP_CHANNEL_ID',
@@ -22,7 +26,7 @@ describe('loadClientTemplate', () => {
   ])('%s resolves to the canonical npx launch contract', async (name) => {
     const template = await loadClientTemplate(`configs/${name}`);
     expect(template.command).toBe('npx');
-    expect(template.args).toEqual(['-y', 'github:pratikgh0se/youtube-mcp#v0.2.0', '--transport', 'stdio']);
+    expect(template.args).toEqual(['-y', TARBALL, '--transport', 'stdio']);
     // Configs declare only the env they need; every key must be one of the five supported names.
     for (const key of template.envKeys) expect(ALLOWED_ENV_KEYS).toContain(key);
   });
