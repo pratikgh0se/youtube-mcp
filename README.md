@@ -6,7 +6,7 @@
 ![Node.js >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)
 ![MCP server](https://img.shields.io/badge/MCP-server-blue.svg)
 
-YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 76 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
+YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 72 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
 
 Anything that changes your YouTube account goes through a **preflight, approve, execute** flow. The assistant first shows you exactly what it is about to do, and nothing happens until the exact previewed change is approved.
 
@@ -46,7 +46,7 @@ Anything that changes your YouTube account goes through a **preflight, approve, 
 Write tools are built so an AI client cannot make a surprise change:
 
 1. **Preflight.** A `youtube_preflight_*` tool reads fresh state from YouTube, validates the request and returns an exact preview.
-2. **Approve.** A separate `youtube_approve_*` call, with `confirm: true`, binds approval to the profile, channel, target, requested change and fresh state. Approvals expire. They are stored locally, so an approved operation survives a server restart until it expires.
+2. **Approve.** A separate `youtube_approve` call (one tool for every kind of change), with `confirm: true`, binds approval to the profile, channel, target, requested change and fresh state. Approvals expire. They are stored locally, so an approved operation survives a server restart until it expires.
 3. **Execute.** The write tool runs only with the same approved inputs and `confirm: true`.
 
 More guard rails, all from the code:
@@ -308,19 +308,20 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 
 ## Tools
 
-76 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
+72 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
 
 | Area | Tools |
 | --- | --- |
 | Public reads (5) | `youtube_search`, `youtube_get_video`, `youtube_get_channel`, `youtube_get_comments`, `youtube_get_transcript` |
-| Your account (7) | Read: `youtube_my_account`, `youtube_list_subscriptions`, `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` |
+| Your account (7) | Read: `youtube_my_account`, `youtube_list_subscriptions`, `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` (only on videos your channel owns; other videos are refused with `ownership_required`) |
 | Creator analytics (3) | `youtube_creator_overview`, `youtube_creator_top_videos`, `youtube_creator_retention` |
 | Creator reads (10) | `youtube_list_owned_videos`, `youtube_get_owned_video`, `youtube_list_video_categories`, `youtube_list_playlists`, `youtube_get_playlist`, `youtube_list_playlist_items`, `youtube_list_caption_tracks`, `youtube_list_moderation_comments`, `youtube_get_moderation_comment`, `youtube_find_comment_reply` |
-| Uploads (8) | `youtube_preflight_upload`, `youtube_approve_upload`, `youtube_upload_video`, `youtube_get_upload_status`, `youtube_preflight_resume_upload`, `youtube_resume_upload`, `youtube_preflight_cancel_upload`, `youtube_cancel_upload` |
-| Video metadata, archive and thumbnails (7) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_archive_video`, `youtube_archive_video`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail`, `youtube_approve_creator_content` |
-| Captions (8) | `youtube_preflight_caption_upload`, `youtube_upload_caption`, `youtube_preflight_caption_update`, `youtube_update_caption`, `youtube_preflight_caption_download`, `youtube_download_caption`, `youtube_preflight_caption_delete`, `youtube_delete_caption` |
-| Playlists (13) | `youtube_preflight_create_playlist`, `youtube_create_playlist`, `youtube_preflight_update_playlist`, `youtube_update_playlist`, `youtube_preflight_delete_playlist`, `youtube_delete_playlist`, `youtube_preflight_add_playlist_item`, `youtube_add_playlist_item`, `youtube_preflight_remove_playlist_item`, `youtube_remove_playlist_item`, `youtube_preflight_reorder_playlist_item`, `youtube_reorder_playlist_item`, `youtube_approve_playlist` |
-| Comments and moderation (7) | `youtube_preflight_reply_to_comment`, `youtube_reply_to_comment`, `youtube_preflight_set_comment_moderation_status`, `youtube_set_comment_moderation_status`, `youtube_preflight_delete_comment`, `youtube_delete_comment`, `youtube_approve_moderation` |
+| Uploads (7) | `youtube_preflight_upload`, `youtube_upload_video`, `youtube_get_upload_status`, `youtube_preflight_resume_upload`, `youtube_resume_upload`, `youtube_preflight_cancel_upload`, `youtube_cancel_upload` |
+| Video metadata, archive and thumbnails (6) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_archive_video`, `youtube_archive_video`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail` |
+| Captions (7) | `youtube_preflight_caption_upload`, `youtube_upload_caption`, `youtube_preflight_caption_update`, `youtube_update_caption`, `youtube_download_caption` (read-only, no approval), `youtube_preflight_caption_delete`, `youtube_delete_caption` |
+| Playlists (12) | `youtube_preflight_create_playlist`, `youtube_create_playlist`, `youtube_preflight_update_playlist`, `youtube_update_playlist`, `youtube_preflight_delete_playlist`, `youtube_delete_playlist`, `youtube_preflight_add_playlist_item`, `youtube_add_playlist_item`, `youtube_preflight_remove_playlist_item`, `youtube_remove_playlist_item`, `youtube_preflight_reorder_playlist_item`, `youtube_reorder_playlist_item` |
+| Comments and moderation (6) | `youtube_preflight_reply_to_comment`, `youtube_reply_to_comment`, `youtube_preflight_set_comment_moderation_status`, `youtube_set_comment_moderation_status`, `youtube_preflight_delete_comment`, `youtube_delete_comment` |
+| Approval (1) | `youtube_approve`: approves any pending preview by `approvalId` and shows its kind, target and exact change |
 | Local viewing analysis (7) | `youtube_import_takeout`, `youtube_consumption_profile`, `youtube_consumption_trends`, `youtube_save_curation_policy`, `youtube_save_curation_candidate`, `youtube_propose_consumption_queue`, `youtube_reset_consumption_data` |
 | Status (1) | `youtube_auth_status` |
 

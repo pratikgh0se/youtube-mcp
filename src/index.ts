@@ -11,6 +11,7 @@ import { ConsumptionStore } from './consumption/store.js';
 import { CurationStore } from './consumption/curation-store.js';
 import { CurationService, ProfileCurationService } from './consumption/curation.js';
 import { createMcpServer } from './mcp/server.js';
+import { createApprovalTool } from './operations/approval.js';
 import { OperationService } from './operations/service.js';
 import { OperationStore } from './operations/store.js';
 import { parseHttpPort, runHttp } from './transports/http.js';
@@ -75,13 +76,14 @@ async function main(arguments_: string[]): Promise<void> {
       }),
     },
     public: new PublicService(client),
-    account: new AccountService(oauth, client),
+    account: new AccountService(oauth, client, resources),
     creator: new CreatorAnalyticsService(oauth, client),
     resources,
     uploads,
     content,
     playlists,
     moderation,
+    approvals: createApprovalTool(operations, creatorProfile),
     curation,
     importer: new TakeoutImporter(store),
     insights: new ConsumptionInsights(store),

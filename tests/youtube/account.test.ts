@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AppError } from '../../src/errors.js';
 import { AccountService } from '../../src/youtube/account.js';
 import { YouTubeClient, type YouTubeDataApi } from '../../src/youtube/client.js';
 import type { AppConfig } from '../../src/types.js';
@@ -53,6 +54,15 @@ function accountApi(commentThreadRequests?: Record<string, unknown>[]): YouTubeD
   });
 }
 
+function ownedVideos(owned = ['video-1']): { getOwnedVideo: (videoId: string) => Promise<never> } {
+  return {
+    getOwnedVideo: async (videoId: string) => {
+      if (!owned.includes(videoId)) throw new AppError('ownership_required', 'not owned', 'use an owned resource', false);
+      return {} as never;
+    },
+  };
+}
+
 function service(): AccountService {
   return new AccountService(
     { getAccessToken: async () => 'access-token' },
@@ -60,6 +70,7 @@ function service(): AccountService {
       createAuthorizedApi: () => accountApi(),
       createPublicApi: () => accountApi(),
     }),
+    ownedVideos(),
   );
 }
 
@@ -89,6 +100,7 @@ describe('AccountService', () => {
           },
           createPublicApi: () => accountApi(),
         }),
+        ownedVideos(),
       );
 
       await expect(account[method]({ channelId: 'c1' } as never)).rejects.toMatchObject({
@@ -120,6 +132,23 @@ describe('AccountService', () => {
     });
   });
 
+  it('refuses to create a comment on a video the selected channel does not own, before any write', async () => {
+    const account = new AccountService(
+      { getAccessToken: async () => 'access-token' },
+      new YouTubeClient(config(), {
+        createAuthorizedApi: () => { throw new Error('YouTube provider must not be reached'); },
+        createPublicApi: () => accountApi(),
+      }),
+      ownedVideos(['video-1']),
+    );
+
+    await expect(account.createComment({ videoId: 'someone-elses-video', text: 'Nice!', confirm: true })).rejects.toMatchObject({
+      code: 'ownership_required',
+      retryable: false,
+      action: expect.stringContaining('Replies on your own videos are supported'),
+    });
+  });
+
   it('marks a dispatched account mutation as unknown instead of inviting a retry', async () => {
     const provider = accountApi();
     let firstAttempt = true;
@@ -136,6 +165,7 @@ describe('AccountService', () => {
         createAuthorizedApi: () => provider,
         createPublicApi: () => accountApi(),
       }),
+      ownedVideos(),
     );
 
     await expect(account.rateVideo({ videoId: 'video-1', rating: 'like', confirm: true })).rejects.toMatchObject({
@@ -153,6 +183,7 @@ describe('AccountService', () => {
         createAuthorizedApi: () => api,
         createPublicApi: () => accountApi(),
       }),
+      ownedVideos(),
     );
 
     await expect(account.listSubscriptions()).resolves.toEqual([

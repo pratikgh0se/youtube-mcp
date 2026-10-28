@@ -57,7 +57,7 @@ npx -y github:pratikgh0se/youtube-mcp#v0.2.0 youtube-auth
 | OpenCode, OpenClaw, Hermes | `opencode.json`, `openclaw.json`, `hermes.yaml` |
 | Anything else | `generic-stdio.json` |
 
-Safety: write tools follow preflight, approve, execute. Show the user each preview and never pass `confirm: true` without their approval.
+Safety: write tools follow preflight, `youtube_approve` (one tool for every kind of change), execute. Caption download is read-only and needs no approval. `youtube_create_comment` works only on videos the selected channel owns. Show the user each preview and never pass `confirm: true` without their approval.
 
 ## Part 2. Working on this repo
 

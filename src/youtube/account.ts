@@ -14,6 +14,7 @@ import type {
   VideoRatingResult,
 } from '../types.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
+import type { ResourceService } from './resources.js';
 
 type AccountYouTubeApi = YouTubeDataApi & {
   subscriptions: NonNullable<YouTubeDataApi['subscriptions']>;
@@ -35,6 +36,7 @@ export class AccountService {
   constructor(
     private readonly oauth: Pick<OAuthService, 'getAccessToken'>,
     private readonly client: YouTubeClient,
+    private readonly resources: Pick<ResourceService, 'getOwnedVideo'>,
   ) {}
 
   async subscribe(input: SubscribeInput): Promise<SubscriptionResult> {
@@ -65,7 +67,14 @@ export class AccountService {
     });
   }
 
+  /** Posting as the channel is limited to its own videos (spam guard); getOwnedVideo retries while a fresh video is not yet readable. */
   async createComment(input: CreateCommentInput): Promise<CommentSummary> {
+    requireConfirmation(input);
+    try {
+      await this.resources.getOwnedVideo(input.videoId);
+    } catch (error) {
+      throw toSafeError(error).code === 'ownership_required' ? commentOwnershipRequiredError() : toSafeError(error);
+    }
     return this.mutate(input, async (api) => {
         const response = await api.commentThreads.insert({
           part: 'snippet',
@@ -196,6 +205,15 @@ function invalidProviderResponse(resource: string): AppError {
     `The YouTube provider did not return a valid ${resource}.`,
     'Try again. If the problem continues, verify the provider configuration.',
     true,
+  );
+}
+
+function commentOwnershipRequiredError(): AppError {
+  return new AppError(
+    'ownership_required',
+    'Comments can only be created on videos owned by the selected creator channel.',
+    'Replies on your own videos are supported. Use a video ID from youtube_list_owned_videos; commenting on other channels\' videos is not supported.',
+    false,
   );
 }
 

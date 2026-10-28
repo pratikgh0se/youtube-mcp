@@ -36,7 +36,7 @@ export type ArchiveVideoInput = { videoId: string; approvalId?: string; confirm?
 export type ThumbnailInput = { videoId: string; filePath: string; mimeType: 'image/jpeg' | 'image/png'; approvalId?: string; confirm?: boolean };
 export type CaptionUploadInput = { videoId: string; filePath: string; mimeType: CaptionMimeType; language: string; name: string; isDraft?: boolean; approvalId?: string; confirm?: boolean };
 export type CaptionUpdateInput = CaptionUploadInput & { captionId: string };
-export type CaptionDownloadInput = { videoId: string; captionId: string; outputPath: string; format?: 'srt' | 'ttml' | 'vtt'; approvalId?: string; confirm?: boolean };
+export type CaptionDownloadInput = { videoId: string; captionId: string; outputPath: string; format?: 'srt' | 'ttml' | 'vtt' };
 export type CaptionDeleteInput = { videoId: string; captionId: string; approvalId?: string; confirm?: boolean };
 export type CaptionMimeType = 'application/octet-stream' | 'application/ttml+xml' | 'text/plain' | 'text/vtt';
 
@@ -226,26 +226,14 @@ export class CreatorContentService {
     }
   }
 
-  async preflightCaptionDownload(input: CaptionDownloadInput): Promise<OperationPreview> {
-    await this.requireOwnedCaption(input.videoId, input.captionId);
-    return this.preflight('caption.download', input.captionId, captionDownloadDesired(input), input.captionId, captionReconciliation(input.videoId));
-  }
-
-  async downloadCaption(input: CaptionDownloadInput & { approvalId: string }): Promise<{ operationId: string; state: 'succeeded'; captionId: string; downloaded: true }> {
+  /** Read-only on YouTube: no preview or approval. Ownership is verified and the local destination is created exclusively (never overwritten). */
+  async downloadCaption(input: CaptionDownloadInput): Promise<{ state: 'succeeded'; captionId: string; downloaded: true }> {
     try {
-      await this.requireApproved(input, 'caption.download', input.captionId, captionDownloadDesired(input));
       await this.requireOwnedCaption(input.videoId, input.captionId);
       await requireAvailableCaptionDestination(input.outputPath);
-      await this.claim(input, 'caption.download', input.captionId, captionDownloadDesired(input), input.captionId);
-      const bytes = await this.providerOutcome(input.approvalId, captionReconciliation(input.videoId), () => this.provider.downloadCaption({ captionId: input.captionId, format: input.format }));
-      try {
-        await writeCaptionDestination(input.outputPath, bytes);
-      } catch (error) {
-        await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'failed' });
-        throw error;
-      }
-      await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
-      return { operationId: input.approvalId, state: 'succeeded', captionId: input.captionId, downloaded: true };
+      const bytes = await this.provider.downloadCaption({ captionId: input.captionId, format: input.format });
+      await writeCaptionDestination(input.outputPath, bytes);
+      return { state: 'succeeded', captionId: input.captionId, downloaded: true };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -426,10 +414,6 @@ function captionUploadDesired(input: CaptionUploadInput, fileFingerprint: string
 
 function captionUpdateDesired(input: CaptionUpdateInput, fileFingerprint: string): Record<string, unknown> {
   return { captionId: input.captionId, ...captionUploadDesired(input, fileFingerprint) };
-}
-
-function captionDownloadDesired(input: CaptionDownloadInput): Record<string, unknown> {
-  return { videoId: input.videoId, captionId: input.captionId, outputTargetFingerprint: fingerprint({ outputPath: input.outputPath }), ...(input.format ? { format: input.format } : {}) };
 }
 
 function captionDeleteDesired(input: CaptionDeleteInput, caption: CaptionTrack): Record<string, unknown> {

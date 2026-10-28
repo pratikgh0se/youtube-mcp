@@ -60,7 +60,7 @@ const SUBSCRIBE_CANDIDATES = ['UCBR8-60-B28hp2BmDPdntcQ', 'UC_x5XG1OV2P6uZZ5FSM9
 const QUOTA = {
   youtube_search: 100, youtube_upload_video: 1600, youtube_update_metadata: 50, youtube_set_thumbnail: 50,
   youtube_upload_caption: 400, youtube_update_caption: 450, youtube_download_caption: 200, youtube_delete_caption: 50,
-  youtube_list_caption_tracks: 50, youtube_preflight_caption_update: 51, youtube_preflight_caption_download: 51, youtube_preflight_caption_delete: 51,
+  youtube_list_caption_tracks: 50, youtube_preflight_caption_update: 51, youtube_preflight_caption_delete: 51,
   youtube_create_playlist: 50, youtube_update_playlist: 50, youtube_delete_playlist: 50, youtube_add_playlist_item: 50,
   youtube_remove_playlist_item: 50, youtube_reorder_playlist_item: 50, youtube_create_comment: 50, youtube_reply_to_comment: 50,
   youtube_set_comment_moderation_status: 50, youtube_delete_comment: 50, youtube_subscribe: 50, youtube_unsubscribe: 50,
@@ -68,7 +68,7 @@ const QUOTA = {
   youtube_auth_status: 0, youtube_get_upload_status: 0, youtube_creator_overview: 0, youtube_creator_top_videos: 0, youtube_creator_retention: 0,
   youtube_import_takeout: 0, youtube_consumption_profile: 0, youtube_consumption_trends: 0, youtube_save_curation_policy: 0,
   youtube_save_curation_candidate: 0, youtube_propose_consumption_queue: 0, youtube_reset_consumption_data: 0,
-  youtube_approve_upload: 0, youtube_approve_creator_content: 0, youtube_approve_playlist: 0, youtube_approve_moderation: 0,
+  youtube_approve: 0,
 };
 const SPENT_BY = {};
 let quotaUnits = 0;
@@ -77,13 +77,13 @@ let quotaUnits = 0;
 const GROUPS = {
   account: ['youtube_auth_status', 'youtube_my_account', 'youtube_get_channel'],
   public: ['youtube_search', 'youtube_get_video', 'youtube_get_transcript', 'youtube_list_video_categories', 'youtube_get_comments'],
-  uploads: ['youtube_preflight_upload', 'youtube_approve_upload', 'youtube_upload_video', 'youtube_get_upload_status', 'youtube_preflight_resume_upload', 'youtube_resume_upload', 'youtube_preflight_cancel_upload', 'youtube_cancel_upload'],
+  uploads: ['youtube_preflight_upload', 'youtube_approve', 'youtube_upload_video', 'youtube_get_upload_status', 'youtube_preflight_resume_upload', 'youtube_resume_upload', 'youtube_preflight_cancel_upload', 'youtube_cancel_upload'],
   'your-videos': ['youtube_list_owned_videos', 'youtube_get_owned_video'],
-  'edit-video': ['youtube_preflight_update_metadata', 'youtube_approve_creator_content', 'youtube_update_metadata', 'youtube_preflight_set_thumbnail', 'youtube_set_thumbnail'],
+  'edit-video': ['youtube_preflight_update_metadata', 'youtube_approve', 'youtube_update_metadata', 'youtube_preflight_set_thumbnail', 'youtube_set_thumbnail'],
   lifecycle: ['youtube_preflight_archive_video', 'youtube_archive_video'],
-  captions: ['youtube_preflight_caption_upload', 'youtube_upload_caption', 'youtube_list_caption_tracks', 'youtube_preflight_caption_update', 'youtube_update_caption', 'youtube_preflight_caption_download', 'youtube_download_caption', 'youtube_preflight_caption_delete', 'youtube_delete_caption'],
-  playlists: ['youtube_list_playlists', 'youtube_get_playlist', 'youtube_list_playlist_items', 'youtube_preflight_create_playlist', 'youtube_approve_playlist', 'youtube_create_playlist', 'youtube_preflight_update_playlist', 'youtube_update_playlist', 'youtube_preflight_delete_playlist', 'youtube_delete_playlist', 'youtube_preflight_add_playlist_item', 'youtube_add_playlist_item', 'youtube_preflight_remove_playlist_item', 'youtube_remove_playlist_item', 'youtube_preflight_reorder_playlist_item', 'youtube_reorder_playlist_item'],
-  comments: ['youtube_create_comment', 'youtube_list_channel_comment_threads', 'youtube_preflight_reply_to_comment', 'youtube_approve_moderation', 'youtube_reply_to_comment', 'youtube_find_comment_reply', 'youtube_list_moderation_comments', 'youtube_get_moderation_comment', 'youtube_preflight_set_comment_moderation_status', 'youtube_set_comment_moderation_status', 'youtube_preflight_delete_comment', 'youtube_delete_comment'],
+  captions: ['youtube_preflight_caption_upload', 'youtube_upload_caption', 'youtube_list_caption_tracks', 'youtube_preflight_caption_update', 'youtube_update_caption', 'youtube_download_caption', 'youtube_preflight_caption_delete', 'youtube_delete_caption'],
+  playlists: ['youtube_list_playlists', 'youtube_get_playlist', 'youtube_list_playlist_items', 'youtube_preflight_create_playlist', 'youtube_approve', 'youtube_create_playlist', 'youtube_preflight_update_playlist', 'youtube_update_playlist', 'youtube_preflight_delete_playlist', 'youtube_delete_playlist', 'youtube_preflight_add_playlist_item', 'youtube_add_playlist_item', 'youtube_preflight_remove_playlist_item', 'youtube_remove_playlist_item', 'youtube_preflight_reorder_playlist_item', 'youtube_reorder_playlist_item'],
+  comments: ['youtube_create_comment', 'youtube_list_channel_comment_threads', 'youtube_preflight_reply_to_comment', 'youtube_approve', 'youtube_reply_to_comment', 'youtube_find_comment_reply', 'youtube_list_moderation_comments', 'youtube_get_moderation_comment', 'youtube_preflight_set_comment_moderation_status', 'youtube_set_comment_moderation_status', 'youtube_preflight_delete_comment', 'youtube_delete_comment'],
   analytics: ['youtube_creator_overview', 'youtube_creator_top_videos', 'youtube_creator_retention'],
   viewer: ['youtube_list_subscriptions', 'youtube_subscribe', 'youtube_unsubscribe', 'youtube_rate_video'],
   'watch-history': ['youtube_import_takeout', 'youtube_consumption_profile', 'youtube_consumption_trends', 'youtube_save_curation_policy', 'youtube_save_curation_candidate', 'youtube_propose_consumption_queue', 'youtube_reset_consumption_data'],
@@ -263,19 +263,19 @@ async function quietApproved(pre, preArgs, approve, exec, execArgs) {
   await call(approve, { approvalId: preview.approvalId, confirm: true });
   await retry(() => call(exec, { ...execArgs, approvalId: preview.approvalId, confirm: true }), { attempts: 3 });
 }
-const deletePlaylistQuiet = (playlistId) => quietApproved('youtube_preflight_delete_playlist', { playlistId }, 'youtube_approve_playlist', 'youtube_delete_playlist', { playlistId });
-const deleteCaptionQuiet = (videoId, captionId) => quietApproved('youtube_preflight_caption_delete', { videoId, captionId }, 'youtube_approve_creator_content', 'youtube_delete_caption', { videoId, captionId });
+const deletePlaylistQuiet = (playlistId) => quietApproved('youtube_preflight_delete_playlist', { playlistId }, 'youtube_approve', 'youtube_delete_playlist', { playlistId });
+const deleteCaptionQuiet = (videoId, captionId) => quietApproved('youtube_preflight_caption_delete', { videoId, captionId }, 'youtube_approve', 'youtube_delete_caption', { videoId, captionId });
 /** Archive (private, unscheduled) without recording results; an already-archived video counts as success. Returns true if a change was made. */
 async function archiveVideoQuiet(videoId) {
   try {
-    await quietApproved('youtube_preflight_archive_video', { videoId }, 'youtube_approve_creator_content', 'youtube_archive_video', { videoId });
+    await quietApproved('youtube_preflight_archive_video', { videoId }, 'youtube_approve', 'youtube_archive_video', { videoId });
     return true;
   } catch (error) {
     if (error.code === 'already_archived') return false;
     throw error;
   }
 }
-const deleteCommentQuiet = (commentId) => quietApproved('youtube_preflight_delete_comment', { commentId }, 'youtube_approve_moderation', 'youtube_delete_comment', { commentId });
+const deleteCommentQuiet = (commentId) => quietApproved('youtube_preflight_delete_comment', { commentId }, 'youtube_approve', 'youtube_delete_comment', { commentId });
 
 /** Registers a cleanup; returns a function that marks it done (call after the main flow deleted the resource). */
 function addCleanup(label, run) {
@@ -380,7 +380,7 @@ async function uploadsGroup() {
     state.videoId = reuseVideoId;
     // Preflight and approve cost no quota and are exercised; the upload itself is not executed.
     const preview = await step('youtube_preflight_upload', uploadArgs, { check: (v) => (v.approvalId ? undefined : 'no approvalId') });
-    await step('youtube_approve_upload', { approvalId: preview.approvalId, confirm: true });
+    await step('youtube_approve', { approvalId: preview.approvalId, confirm: true });
     skipTools(['youtube_upload_video', 'youtube_get_upload_status', 'youtube_resume_upload', 'youtube_cancel_upload'], 'YOUTUBE_E2E_REUSE_VIDEO_ID set; no upload session in this run (unset it to run a real upload)');
     await guard('youtube_preflight_resume_upload', { ...uploadArgs, uploadId: bogus }, 'upload_not_found', 'no interrupted upload exists in this run; server correctly refuses an unknown uploadId');
     await guard('youtube_preflight_cancel_upload', { uploadId: bogus }, 'upload_not_found', 'no live upload session exists in this run; server correctly refuses an unknown uploadId');
@@ -388,7 +388,7 @@ async function uploadsGroup() {
   }
 
   const preview = await step('youtube_preflight_upload', uploadArgs, { check: (v) => (v.approvalId ? undefined : 'no approvalId') });
-  await step('youtube_approve_upload', { approvalId: preview.approvalId, confirm: true });
+  await step('youtube_approve', { approvalId: preview.approvalId, confirm: true });
   const uploaded = await step('youtube_upload_video', { ...uploadArgs, approvalId: preview.approvalId, confirm: true }, {
     timeout: 600_000,
     check: (v) => (v.state === 'complete' && v.videoId ? undefined : `upload state ${v.state}`),
@@ -407,7 +407,7 @@ async function uploadsGroup() {
   try {
     const resumed = await approved({
       pre: 'youtube_preflight_resume_upload', preArgs: { ...uploadArgs, uploadId: state.uploadId },
-      approve: 'youtube_approve_upload', exec: 'youtube_resume_upload', execArgs: { ...uploadArgs, uploadId: state.uploadId },
+      approve: 'youtube_approve', exec: 'youtube_resume_upload', execArgs: { ...uploadArgs, uploadId: state.uploadId },
     });
     if (resumed.state === 'complete' && resumed.videoId === state.videoId) {
       results.get('youtube_resume_upload').note = 'resume probed the completed session and reconciled to complete (no interrupted session can be produced; upload is single-request)';
@@ -421,7 +421,7 @@ async function uploadsGroup() {
   try {
     const cancelled = await approved({
       pre: 'youtube_preflight_cancel_upload', preArgs: { uploadId: state.uploadId },
-      approve: 'youtube_approve_upload', exec: 'youtube_cancel_upload', execArgs: { uploadId: state.uploadId },
+      approve: 'youtube_approve', exec: 'youtube_cancel_upload', execArgs: { uploadId: state.uploadId },
     });
     if (cancelled.state === 'cancelled') {
       results.get('youtube_cancel_upload').note = 'session DELETE accepted; state cancelled';
@@ -439,7 +439,7 @@ async function editVideoGroup() {
   const newTitle = `${runTitle} (edited)`.slice(0, 100);
   const fields = { videoId: state.videoId, title: newTitle, tags: ['youtube-mcp-e2e', 'automated-test'] };
   await approved({
-    pre: 'youtube_preflight_update_metadata', preArgs: fields, approve: 'youtube_approve_creator_content',
+    pre: 'youtube_preflight_update_metadata', preArgs: fields, approve: 'youtube_approve',
     exec: 'youtube_update_metadata', execArgs: fields, attempts: 3,
   });
   await retry(async () => {
@@ -452,7 +452,7 @@ async function editVideoGroup() {
   const thumb = { videoId: state.videoId, filePath: thumbPath, mimeType: 'image/jpeg' };
   try {
     await approved({
-      pre: 'youtube_preflight_set_thumbnail', preArgs: thumb, approve: 'youtube_approve_creator_content', exec: 'youtube_set_thumbnail', execArgs: thumb,
+      pre: 'youtube_preflight_set_thumbnail', preArgs: thumb, approve: 'youtube_approve', exec: 'youtube_set_thumbnail', execArgs: thumb,
       blocked: (error) => error.status === 403 && error.reason === 'forbidden',
     });
   } catch (error) {
@@ -475,7 +475,7 @@ async function captionsGroup() {
   const meta = { videoId, mimeType: 'application/octet-stream', language: 'en', name: 'youtube-mcp e2e' };
 
   const captionId = (await approved({
-    pre: 'youtube_preflight_caption_upload', preArgs: { ...meta, filePath: first }, approve: 'youtube_approve_creator_content',
+    pre: 'youtube_preflight_caption_upload', preArgs: { ...meta, filePath: first }, approve: 'youtube_approve',
     exec: 'youtube_upload_caption', execArgs: { ...meta, filePath: first }, attempts: 2, delayMs: 8_000,
   })).captionId;
   const forget = addCleanup(`caption ${captionId}`, () => deleteCaptionQuiet(videoId, captionId));
@@ -487,7 +487,7 @@ async function captionsGroup() {
   let updated = false;
   try {
     await approved({
-      pre: 'youtube_preflight_caption_update', preArgs: { ...meta, captionId, filePath: second }, approve: 'youtube_approve_creator_content',
+      pre: 'youtube_preflight_caption_update', preArgs: { ...meta, captionId, filePath: second }, approve: 'youtube_approve',
       exec: 'youtube_update_caption', execArgs: { ...meta, captionId, filePath: second }, attempts: 2, delayMs: 6_000,
     });
     updated = true;
@@ -501,10 +501,8 @@ async function captionsGroup() {
   for (let attempt = 1; Date.now() < deadline; attempt += 1) {
     const outputPath = join(mediaDir, `e2e-caption-download-${fileStamp}-${attempt}.srt`);
     const args = { videoId, captionId, outputPath, format: 'srt' };
-    await approved({
-      pre: 'youtube_preflight_caption_download', preArgs: args, approve: 'youtube_approve_creator_content',
-      exec: 'youtube_download_caption', execArgs: args, attempts: 2, delayMs: 5_000,
-    });
+    // Read-only: no preflight/approval. Ownership of the video and caption is verified server-side.
+    await step('youtube_download_caption', args, { attempts: 3, delayMs: 5_000 });
     downloaded = await readFile(outputPath, 'utf8');
     if (downloaded.includes(expected)) break;
     await sleep(10_000);
@@ -512,7 +510,7 @@ async function captionsGroup() {
   if (!downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
 
   await approved({
-    pre: 'youtube_preflight_caption_delete', preArgs: { videoId, captionId }, approve: 'youtube_approve_creator_content',
+    pre: 'youtube_preflight_caption_delete', preArgs: { videoId, captionId }, approve: 'youtube_approve',
     exec: 'youtube_delete_caption', execArgs: { videoId, captionId }, attempts: 3,
   });
   forget();
@@ -533,7 +531,7 @@ async function playlistsGroup() {
   const title = `${PREFIX}playlist ${stamp}`;
   const createArgs = { title, description: 'Temporary E2E playlist.', privacyStatus: 'private' };
   const created = await approved({
-    pre: 'youtube_preflight_create_playlist', preArgs: createArgs, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_create_playlist', preArgs: createArgs, approve: 'youtube_approve',
     exec: 'youtube_create_playlist', execArgs: createArgs,
   });
   const playlistId = created.playlistId;
@@ -542,7 +540,7 @@ async function playlistsGroup() {
   await step('youtube_get_playlist', { playlistId }, { attempts: 12, delayMs: 5_000, check: (v) => (v.item?.id === playlistId ? undefined : 'playlist not found') });
 
   const add = (videoId) => approved({
-    pre: 'youtube_preflight_add_playlist_item', preArgs: { playlistId, videoId }, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_add_playlist_item', preArgs: { playlistId, videoId }, approve: 'youtube_approve',
     exec: 'youtube_add_playlist_item', execArgs: { playlistId, videoId }, attempts: 4, delayMs: 4_000,
   });
   const itemA = (await add(state.videoId)).playlistItemId;
@@ -554,7 +552,7 @@ async function playlistsGroup() {
 
   const reorderArgs = { playlistId, playlistItemId: itemB, position: 0 };
   await approved({
-    pre: 'youtube_preflight_reorder_playlist_item', preArgs: reorderArgs, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_reorder_playlist_item', preArgs: reorderArgs, approve: 'youtube_approve',
     exec: 'youtube_reorder_playlist_item', execArgs: reorderArgs, attempts: 3,
   });
   await retry(async () => {
@@ -564,7 +562,7 @@ async function playlistsGroup() {
 
   const newTitle = `${title} (renamed)`;
   await approved({
-    pre: 'youtube_preflight_update_playlist', preArgs: { playlistId, title: newTitle }, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_update_playlist', preArgs: { playlistId, title: newTitle }, approve: 'youtube_approve',
     exec: 'youtube_update_playlist', execArgs: { playlistId, title: newTitle }, attempts: 3,
   });
   await retry(async () => {
@@ -573,7 +571,7 @@ async function playlistsGroup() {
   }).catch((error) => record('youtube_update_playlist', 'FAIL', 0, `accepted but title unchanged: ${error.message}`));
 
   await approved({
-    pre: 'youtube_preflight_remove_playlist_item', preArgs: { playlistId, playlistItemId: itemA }, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_remove_playlist_item', preArgs: { playlistId, playlistItemId: itemA }, approve: 'youtube_approve',
     exec: 'youtube_remove_playlist_item', execArgs: { playlistId, playlistItemId: itemA }, attempts: 3,
   });
   await retry(async () => {
@@ -582,7 +580,7 @@ async function playlistsGroup() {
   }).catch((error) => record('youtube_remove_playlist_item', 'FAIL', 0, `accepted but item still listed: ${error.message}`));
 
   await approved({
-    pre: 'youtube_preflight_delete_playlist', preArgs: { playlistId }, approve: 'youtube_approve_playlist',
+    pre: 'youtube_preflight_delete_playlist', preArgs: { playlistId }, approve: 'youtube_approve',
     exec: 'youtube_delete_playlist', execArgs: { playlistId }, attempts: 4,
   });
   forget();
@@ -618,7 +616,7 @@ async function lifecycleGroup() {
     const videoPath = await makeTestVideo('e2e-lifecycle.mp4');
     const uploadArgs = { filePath: videoPath, title: `${LIFECYCLE_PREFIX}${stamp}`, description: 'Automated youtube-mcp lifecycle E2E video. Archived (private) after each run; safe to delete.', privacyStatus: 'private' };
     const preview = await step('youtube_preflight_upload', uploadArgs, { check: (v) => (v.approvalId ? undefined : 'no approvalId') });
-    await step('youtube_approve_upload', { approvalId: preview.approvalId, confirm: true });
+    await step('youtube_approve', { approvalId: preview.approvalId, confirm: true });
     const uploaded = await step('youtube_upload_video', { ...uploadArgs, approvalId: preview.approvalId, confirm: true }, {
       timeout: 600_000, check: (v) => (v.state === 'complete' && v.videoId ? undefined : `upload state ${v.state}`),
     });
@@ -635,7 +633,7 @@ async function lifecycleGroup() {
   async function setState(label, fields, verify, { blocked, attempts = 6 } = {}) {
     try {
       await approved({
-        pre: 'youtube_preflight_update_metadata', preArgs: { videoId, ...fields }, approve: 'youtube_approve_creator_content',
+        pre: 'youtube_preflight_update_metadata', preArgs: { videoId, ...fields }, approve: 'youtube_approve',
         exec: 'youtube_update_metadata', execArgs: { videoId, ...fields }, attempts: 3, blocked,
       });
       await retry(async () => {
@@ -678,7 +676,7 @@ async function lifecycleGroup() {
       (item) => (item?.publishAt && Math.abs(Date.parse(item.publishAt) - Date.parse(publishAt)) < 60_000 ? undefined : `publishAt is ${item?.publishAt ?? 'absent'}, expected ${publishAt}`));
     try {
       await approved({
-        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve_creator_content',
+        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve',
         exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
       });
       await retry(async () => {
@@ -714,7 +712,7 @@ async function lifecycleGroup() {
     // private it is already archived and preflight refuses with already_archived.
     if (publicOk) {
       await approved({
-        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve_creator_content',
+        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve',
         exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
       });
       await retry(async () => {
@@ -771,6 +769,8 @@ async function commentsFlow(commentVideoId) {
   const text = `youtube-mcp e2e comment ${stamp}`;
   const replyText = `youtube-mcp e2e reply ${stamp}`;
   // A private video rejects comments (the server reports provider_outcome_unknown), so the video must be unlisted or public.
+  // Comments are only allowed on videos the selected channel owns (spam guard); a public video of another channel must be refused.
+  await guard('youtube_create_comment', { videoId: state.publicVideoId, text, confirm: true }, 'ownership_required', 'refused on a video the selected channel does not own');
   const created = await step('youtube_create_comment', { videoId: commentVideoId, text, confirm: true }, { check: (v) => (v.id ? undefined : 'no comment id') })
     .catch((error) => { const row = results.get('youtube_create_comment'); if (row) row.note = `${row.note} -- hint: YOUTUBE_E2E_COMMENT_VIDEO_ID must be an unlisted/public video owned by the channel with comments enabled`.slice(0, 600); throw error; });
   const commentId = created.id;
@@ -782,7 +782,7 @@ async function commentsFlow(commentVideoId) {
   });
 
   const reply = await approved({
-    pre: 'youtube_preflight_reply_to_comment', preArgs: { commentId, text: replyText }, approve: 'youtube_approve_moderation',
+    pre: 'youtube_preflight_reply_to_comment', preArgs: { commentId, text: replyText }, approve: 'youtube_approve',
     exec: 'youtube_reply_to_comment', execArgs: { commentId, text: replyText }, attempts: 4, delayMs: 4_000,
   });
   const replyId = reply.replyId;
@@ -797,18 +797,18 @@ async function commentsFlow(commentVideoId) {
 
   for (const moderationStatus of ['heldForReview', 'published']) {
     await approved({
-      pre: 'youtube_preflight_set_comment_moderation_status', preArgs: { commentId, moderationStatus }, approve: 'youtube_approve_moderation',
+      pre: 'youtube_preflight_set_comment_moderation_status', preArgs: { commentId, moderationStatus }, approve: 'youtube_approve',
       exec: 'youtube_set_comment_moderation_status', execArgs: { commentId, moderationStatus }, attempts: 3,
     });
   }
 
   await approved({
-    pre: 'youtube_preflight_delete_comment', preArgs: { commentId: replyId }, approve: 'youtube_approve_moderation',
+    pre: 'youtube_preflight_delete_comment', preArgs: { commentId: replyId }, approve: 'youtube_approve',
     exec: 'youtube_delete_comment', execArgs: { commentId: replyId }, attempts: 3,
   });
   replyDeleted = true;
   await approved({
-    pre: 'youtube_preflight_delete_comment', preArgs: { commentId }, approve: 'youtube_approve_moderation',
+    pre: 'youtube_preflight_delete_comment', preArgs: { commentId }, approve: 'youtube_approve',
     exec: 'youtube_delete_comment', execArgs: { commentId }, attempts: 3,
   });
   commentDeleted = true;

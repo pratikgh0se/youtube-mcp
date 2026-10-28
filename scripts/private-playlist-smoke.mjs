@@ -21,12 +21,12 @@ try {
   }
 
   const created = await call('youtube_preflight_create_playlist', { title, description: 'Temporary release validation playlist.', privacyStatus: 'private' });
-  await call('youtube_approve_playlist', { approvalId: created.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: created.approvalId, confirm: true });
   const playlist = await call('youtube_create_playlist', { title, description: 'Temporary release validation playlist.', privacyStatus: 'private', approvalId: created.approvalId, confirm: true });
   playlistId = playlist.playlistId;
 
   const deleted = await retry(() => call('youtube_preflight_delete_playlist', { playlistId }));
-  await call('youtube_approve_playlist', { approvalId: deleted.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: deleted.approvalId, confirm: true });
   await retry(() => call('youtube_delete_playlist', { playlistId, approvalId: deleted.approvalId, confirm: true }));
 
   await retry(async () => {
@@ -51,7 +51,7 @@ async function call(name, args) {
 
 async function deletePlaylist(id) {
   const preview = await retry(() => call('youtube_preflight_delete_playlist', { playlistId: id }));
-  await call('youtube_approve_playlist', { approvalId: preview.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: preview.approvalId, confirm: true });
   await retry(() => call('youtube_delete_playlist', { playlistId: id, approvalId: preview.approvalId, confirm: true }));
 }
 

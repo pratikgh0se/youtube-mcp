@@ -29,6 +29,8 @@ export const moderationCommentSchema = z.object({ commentId: id });
 export const findCommentReplySchema = z.object({ parentId: id, text: z.string().min(1).max(10_000) });
 export const captionTracksSchema = z.object({ videoId: id });
 
+export const approveSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });
+
 const uploadFields = {
   filePath: z.string().min(1),
   title: z.string().min(1),
@@ -38,7 +40,6 @@ const uploadFields = {
   publish: z.boolean().optional(),
 };
 export const preflightUploadSchema = z.object(uploadFields);
-export const approveUploadSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });
 export const uploadVideoSchema = z.object({ ...uploadFields, approvalId: id, confirm: z.boolean().optional() });
 export const preflightResumeUploadSchema = z.object({ ...uploadFields, uploadId: id });
 export const resumeUploadSchema = z.object({ ...uploadFields, approvalId: id, uploadId: id, confirm: z.boolean().optional() });
@@ -65,7 +66,6 @@ export const preflightArchiveVideoSchema = z.object({ videoId: id });
 export const archiveVideoSchema = preflightArchiveVideoSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightThumbnailSchema = z.object({ videoId: id, filePath: z.string().min(1), mimeType: z.enum(['image/jpeg', 'image/png']) });
 export const setThumbnailSchema = preflightThumbnailSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
-export const approveCreatorContentSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });
 
 const captionMimeType = z.enum(['application/octet-stream', 'application/ttml+xml', 'text/plain', 'text/vtt']);
 const captionUploadFields = { videoId: id, filePath: z.string().min(1), mimeType: captionMimeType, language: z.string().min(2).max(16), name: z.string().min(1).max(150), isDraft: z.boolean().optional() };
@@ -73,8 +73,7 @@ export const preflightCaptionUploadSchema = z.object(captionUploadFields);
 export const uploadCaptionSchema = preflightCaptionUploadSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightCaptionUpdateSchema = z.object({ ...captionUploadFields, captionId: id });
 export const updateCaptionSchema = preflightCaptionUpdateSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
-export const preflightCaptionDownloadSchema = z.object({ videoId: id, captionId: id, outputPath: z.string().min(1), format: z.enum(['srt', 'ttml', 'vtt']).optional() });
-export const downloadCaptionSchema = preflightCaptionDownloadSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
+export const downloadCaptionSchema = z.object({ videoId: id, captionId: id, outputPath: z.string().min(1), format: z.enum(['srt', 'ttml', 'vtt']).optional() });
 export const preflightCaptionDeleteSchema = z.object({ videoId: id, captionId: id });
 export const deleteCaptionSchema = preflightCaptionDeleteSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 
@@ -95,7 +94,6 @@ export const preflightRemovePlaylistItemSchema = z.object({ playlistId: id, play
 export const removePlaylistItemSchema = preflightRemovePlaylistItemSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightReorderPlaylistItemSchema = z.object({ playlistId: id, playlistItemId: id, position: z.number().int().min(0) });
 export const reorderPlaylistItemSchema = preflightReorderPlaylistItemSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
-export const approvePlaylistSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });
 
 const commentIdSchema = z.object({ commentId: id });
 export const preflightReplyToCommentSchema = commentIdSchema.extend({ text: z.string().min(1).max(10_000) });
@@ -105,7 +103,6 @@ export const preflightSetCommentModerationStatusSchema = commentIdSchema.extend(
 export const setCommentModerationStatusSchema = preflightSetCommentModerationStatusSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightDeleteCommentSchema = commentIdSchema;
 export const deleteCommentSchema = preflightDeleteCommentSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
-export const approveModerationSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });
 
 export const subscribeSchema = z.object({ channelId: id, confirm: z.boolean().optional() });
 export const unsubscribeSchema = z.object({ subscriptionId: id, confirm: z.boolean().optional() });

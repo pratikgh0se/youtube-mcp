@@ -273,9 +273,7 @@ describe('CreatorContentService', () => {
     await expect(content.updateCaption({ approvalId: update.approvalId, videoId: 'video-1', captionId: 'caption-1', filePath: captionPath, mimeType: 'text/vtt', language: 'en', name: 'English', confirm: true }))
       .resolves.toMatchObject({ state: 'succeeded', captionId: 'caption-1' });
 
-    const download = await content.preflightCaptionDownload({ videoId: 'video-1', captionId: 'caption-1', outputPath });
-    await approve(content, download);
-    await expect(content.downloadCaption({ approvalId: download.approvalId, videoId: 'video-1', captionId: 'caption-1', outputPath, confirm: true }))
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
       .resolves.toMatchObject({ state: 'succeeded', captionId: 'caption-1', downloaded: true });
     await expect(readFile(outputPath, 'utf8')).resolves.toContain('WEBVTT');
 
@@ -422,16 +420,13 @@ describe('CreatorContentService', () => {
     expect(provider.updateCaption).not.toHaveBeenCalled();
   });
 
-  it('binds a caption download approval to the requested local destination without persisting that path', async () => {
+  it('downloads without approval but refuses a caption the selected video does not own', async () => {
     const directory = await temporaryDirectory();
-    const approvedPath = join(directory, 'approved.vtt');
-    const changedPath = join(directory, 'changed.vtt');
+    const outputPath = join(directory, 'other.vtt');
     const { content, provider } = await service();
-    const preview = await content.preflightCaptionDownload({ videoId: 'video-1', captionId: 'caption-1', outputPath: approvedPath });
-    await approve(content, preview);
 
-    await expect(content.downloadCaption({ approvalId: preview.approvalId, videoId: 'video-1', captionId: 'caption-1', outputPath: changedPath, confirm: true }))
-      .rejects.toMatchObject({ code: 'approval_required' });
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'other-caption', outputPath }))
+      .rejects.toMatchObject({ code: 'ownership_required' });
     expect(provider.downloadCaption).not.toHaveBeenCalled();
   });
 
@@ -440,10 +435,7 @@ describe('CreatorContentService', () => {
     const outputPath = join(directory, 'existing.vtt');
     await writeFile(outputPath, 'keep this file');
     const { content } = await service();
-    const preview = await content.preflightCaptionDownload({ videoId: 'video-1', captionId: 'caption-1', outputPath });
-    await approve(content, preview);
-
-    await expect(content.downloadCaption({ approvalId: preview.approvalId, videoId: 'video-1', captionId: 'caption-1', outputPath, confirm: true }))
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
       .rejects.toMatchObject({ code: 'caption_destination_exists' });
     await expect(readFile(outputPath, 'utf8')).resolves.toBe('keep this file');
   });
@@ -455,10 +447,7 @@ describe('CreatorContentService', () => {
     await writeFile(targetPath, 'keep the symlink target');
     await symlink(targetPath, outputPath);
     const { content } = await service();
-    const preview = await content.preflightCaptionDownload({ videoId: 'video-1', captionId: 'caption-1', outputPath });
-    await approve(content, preview);
-
-    await expect(content.downloadCaption({ approvalId: preview.approvalId, videoId: 'video-1', captionId: 'caption-1', outputPath, confirm: true }))
+    await expect(content.downloadCaption({ videoId: 'video-1', captionId: 'caption-1', outputPath }))
       .rejects.toMatchObject({ code: 'caption_destination_exists' });
     await expect(readFile(targetPath, 'utf8')).resolves.toBe('keep the symlink target');
   });

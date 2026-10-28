@@ -74,7 +74,7 @@ Every external account mutation requires `confirm: true` in the tool input, even
 { "channelId": "UC...", "confirm": true }
 ```
 
-Phase 1 writes require literal `confirm: true`. Phase 2 writes require an unexpired preflight, a separate approval call with `confirm: true`, and execution with the same approved inputs and `confirm: true`. The approval binding is persisted, so an approved Phase 2 operation remains executable after a server restart until it expires. Missing confirmation is rejected before the provider mutation. Tests never make a live mutation.
+Phase 1 writes require literal `confirm: true`. Phase 2 writes require an unexpired preflight, a separate `youtube_approve` call with `confirm: true`, and execution with the same approved inputs and `confirm: true`. The approval binding is persisted, so an approved Phase 2 operation remains executable after a server restart until it expires. Missing confirmation is rejected before the provider mutation. Tests never make a live mutation.
 
 Delete previews return an exact target summary before approval. Playlist deletion reconciles with `youtube_get_playlist(playlistId)`. Comment deletion additionally requires the selected channel to match the comment's `authorChannelId`; being the channel associated with a viewer's comment is not deletion authority. Ambiguous status/delete outcomes reconcile with `youtube_get_moderation_comment(commentId)`, while ambiguous replies use `youtube_find_comment_reply(parentId, text)`, which exhausts the exact parent's reply pages and matches only replies authored by the selected channel. Mutations are never retried automatically.
 
