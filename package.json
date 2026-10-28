@@ -40,6 +40,7 @@
     "prepare": "npm run build",
     "prepack": "npm run build",
     "lint": "tsc --noEmit -p tsconfig.json",
+    "smoke:e2e": "node scripts/live-e2e.mjs",
     "smoke:private-playlist": "node scripts/private-playlist-smoke.mjs",
     "smoke:read-only": "node scripts/read-only-smoke.mjs",
     "test": "vitest run",
