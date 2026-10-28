@@ -5,7 +5,7 @@ extensions:
     name: youtube-mcp
     enabled: true
     cmd: npx
-    args: ["-y", "github:pratikgh0se/youtube-mcp", "--transport", "stdio"]
+    args: ["-y", "github:pratikgh0se/youtube-mcp#v0.2.0", "--transport", "stdio"]
     envs:
       YOUTUBE_API_KEY: "<your-youtube-api-key>"
     timeout: 300
