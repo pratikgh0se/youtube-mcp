@@ -1,6 +1,6 @@
 import { YoutubeTranscript } from 'youtube-transcript';
 
-import { toSafeError } from '../errors.js';
+import { AppError, toSafeError } from '../errors.js';
 import type {
   ChannelSummary,
   CommentSummary,
@@ -13,6 +13,19 @@ import type {
 import { YouTubeClient } from './client.js';
 
 export type ChannelInput = { channelId: string };
+export type TrendingInput = { regionCode?: string; videoCategoryId?: string; maxResults?: number; pageToken?: string };
+export type ChannelVideosInput = { channelId: string; maxResults?: number; pageToken?: string };
+export type VideoStats = {
+  id: string;
+  title: string;
+  channelId: string;
+  channelTitle?: string;
+  publishedAt?: string;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+  duration?: string;
+};
 export type CommentsInput = { videoId: string; maxResults?: number };
 
 export type TranscriptFetcher = {
@@ -29,12 +42,85 @@ export class PublicService {
     try {
       const response = await this.client.public().search.list({
         part: 'snippet',
-        fields: 'items(id/videoId,snippet(title,channelId,description,publishedAt))',
+        fields: 'nextPageToken,items(id/videoId,snippet(title,channelId,description,publishedAt))',
         q: input.query,
         maxResults: input.maxResults,
         type: 'video',
+        ...definedOnly({
+          order: input.order,
+          publishedAfter: input.publishedAfter,
+          publishedBefore: input.publishedBefore,
+          videoDuration: input.videoDuration,
+          channelId: input.channelId,
+          regionCode: input.regionCode?.toUpperCase(),
+          relevanceLanguage: input.relevanceLanguage,
+          safeSearch: input.safeSearch,
+          pageToken: input.pageToken,
+        }),
       });
-      return withQuota((response.data.items ?? []).flatMap(normalizeSearchVideo), 100);
+      return withPage(withQuota((response.data.items ?? []).flatMap(normalizeSearchVideo), 100), response.data.nextPageToken);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  /** videos.list chart=mostPopular: 1 quota unit. */
+  async trending(input: TrendingInput): Promise<ToolResult<VideoStats[]>> {
+    try {
+      const response = await this.client.public().videos.list({
+        part: 'snippet,statistics,contentDetails',
+        chart: 'mostPopular',
+        regionCode: (input.regionCode ?? 'US').toUpperCase(),
+        maxResults: input.maxResults,
+        ...definedOnly({ videoCategoryId: input.videoCategoryId, pageToken: input.pageToken }),
+      });
+      return withPage(withQuota((response.data.items ?? []).flatMap(normalizeVideoStats), 1), response.data.nextPageToken);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  /**
+   * Recent uploads of any channel: channels.list (1) + playlistItems.list (1) + videos.list for statistics (1) = 3 quota units.
+   * Accepts a channel ID or an @handle (resolved via channels.list forHandle).
+   */
+  async listChannelVideos(input: ChannelVideosInput): Promise<ToolResult<VideoStats[]> & { channelId: string; uploadsPlaylistId: string }> {
+    try {
+      const api = this.client.public();
+      const handle = input.channelId.startsWith('@');
+      const channels = await api.channels.list({
+        part: 'contentDetails',
+        ...(handle ? { forHandle: input.channelId } : { id: input.channelId }),
+      });
+      const channel = asRecord(channels.data.items?.[0]);
+      const channelId = stringValue(channel?.id);
+      const uploadsPlaylistId = stringValue(asRecord(asRecord(channel?.contentDetails)?.relatedPlaylists)?.uploads);
+      if (!channelId || !uploadsPlaylistId) {
+        throw new AppError('not_found', `No channel or uploads playlist found for ${input.channelId}.`, 'Check the channel ID or @handle.', false);
+      }
+      const page = await api.playlistItems.list({
+        part: ['contentDetails'],
+        playlistId: uploadsPlaylistId,
+        maxResults: input.maxResults ?? 25,
+        ...definedOnly({ pageToken: input.pageToken }),
+      });
+      const ids = (page.data.items ?? []).flatMap((item) => {
+        const videoId = stringValue(asRecord(asRecord(item)?.contentDetails)?.videoId);
+        return videoId ? [videoId] : [];
+      });
+      let items: VideoStats[] = [];
+      let quotaUnits = 2;
+      if (ids.length > 0) {
+        const videos = await api.videos.list({ part: 'snippet,statistics,contentDetails', id: ids.join(',') });
+        quotaUnits = 3;
+        const byId = new Map((videos.data.items ?? []).flatMap(normalizeVideoStats).map((video) => [video.id, video]));
+        items = ids.flatMap((videoId) => byId.get(videoId) ?? []);
+      }
+      return {
+        ...withPage(withQuota(items, quotaUnits), page.data.nextPageToken),
+        channelId,
+        uploadsPlaylistId,
+      };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -94,6 +180,42 @@ export class PublicService {
 
 function withQuota<T>(items: T, quotaUnits: number): ToolResult<T> {
   return { items, context: { quotaUnits, source: 'youtube_data_api' } };
+}
+
+function withPage<T extends ToolResult<unknown>>(result: T, nextPageToken: string | null | undefined): T {
+  return nextPageToken ? { ...result, nextPageToken } : result;
+}
+
+function definedOnly<T extends Record<string, unknown>>(values: T): Partial<T> {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
+function normalizeVideoStats(value: unknown): VideoStats[] {
+  const candidate = asRecord(value);
+  const snippet = asRecord(candidate?.snippet);
+  const statistics = asRecord(candidate?.statistics);
+  const id = stringValue(candidate?.id);
+  const title = stringValue(snippet?.title);
+  const channelId = stringValue(snippet?.channelId);
+  if (!id || !title || !channelId) {
+    return [];
+  }
+  return [{
+    id,
+    title,
+    channelId,
+    ...optionalString('channelTitle', snippet?.channelTitle),
+    ...optionalString('publishedAt', snippet?.publishedAt),
+    ...optionalCount('viewCount', statistics?.viewCount),
+    ...optionalCount('likeCount', statistics?.likeCount),
+    ...optionalCount('commentCount', statistics?.commentCount),
+    ...optionalString('duration', asRecord(candidate?.contentDetails)?.duration),
+  }];
+}
+
+function optionalCount<Key extends string>(key: Key, value: unknown): Partial<Record<Key, number>> {
+  const parsed = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? { [key]: parsed } as Partial<Record<Key, number>> : {};
 }
 
 function normalizeSearchVideo(value: unknown): VideoSummary[] {

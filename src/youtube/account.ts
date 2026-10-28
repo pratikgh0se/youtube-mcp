@@ -5,6 +5,7 @@ import type {
   CommentSummary,
   CreateCommentInput,
   MutationInput,
+  QuotaContext,
   RateVideoInput,
   SubscribeInput,
   SubscriptionResult,
@@ -106,6 +107,37 @@ export class AccountService {
     }
   }
 
+  /**
+   * Paginated subscription list. Plain: 1 quota unit. With details: +1 channels.list per 50 channels and +1 playlistItems.list per
+   * channel (lastUploadAt), i.e. about 1 extra unit per returned channel.
+   */
+  async listSubscriptionsPage(input: { maxResults?: number; pageToken?: string; details?: boolean } = {}): Promise<{
+    items: SubscriptionSummary[];
+    nextPageToken?: string;
+    context: QuotaContext;
+  }> {
+    try {
+      const api = await this.authorized();
+      const response = await api.subscriptions.list({
+        part: 'snippet',
+        mine: true,
+        maxResults: input.maxResults,
+        ...(input.pageToken ? { pageToken: input.pageToken } : {}),
+      });
+      let items = (response.data.items ?? []).flatMap(normalizeSubscription);
+      let quotaUnits = 1;
+      if (input.details && items.length > 0) {
+        const enriched = await enrichSubscriptions(api, items);
+        items = enriched.items;
+        quotaUnits += enriched.quotaUnits;
+      }
+      const nextPageToken = response.data.nextPageToken ?? undefined;
+      return { items, ...(nextPageToken ? { nextPageToken } : {}), context: { quotaUnits, source: 'youtube_data_api' } };
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
   async myAccount(): Promise<ChannelSummary | undefined> {
     try {
       const response = await (await this.authorized()).channels.list({
@@ -155,6 +187,63 @@ export class AccountService {
       throw accountMutationOutcomeUnknownError();
     }
   }
+}
+
+async function enrichSubscriptions(api: AccountYouTubeApi, items: SubscriptionSummary[]): Promise<{ items: SubscriptionSummary[]; quotaUnits: number }> {
+  let quotaUnits = 0;
+  const channels = new Map<string, { subscriberCount?: number; subscriberCountHidden?: boolean; videoCount?: number; uploads?: string }>();
+  for (let index = 0; index < items.length; index += 50) {
+    const response = await api.channels.list({
+      part: 'statistics,contentDetails',
+      id: items.slice(index, index + 50).map((item) => item.channelId).join(','),
+      maxResults: 50,
+    });
+    quotaUnits += 1;
+    for (const raw of response.data.items ?? []) {
+      const channel = asRecord(raw);
+      const id = stringValue(channel?.id);
+      if (!id) continue;
+      const statistics = asRecord(channel?.statistics);
+      const hidden = statistics?.hiddenSubscriberCount === true;
+      channels.set(id, {
+        ...(hidden ? { subscriberCountHidden: true } : countOf('subscriberCount', statistics?.subscriberCount)),
+        ...countOf('videoCount', statistics?.videoCount),
+        ...optionalString('uploads', asRecord(asRecord(channel?.contentDetails)?.relatedPlaylists)?.uploads),
+      });
+    }
+  }
+  const lastUploads = new Map<string, string>();
+  for (const [channelId, info] of channels) {
+    if (!info.uploads) continue;
+    quotaUnits += 1;
+    try {
+      const response = await api.playlistItems.list({ part: ['contentDetails'], playlistId: info.uploads, maxResults: 1 });
+      const publishedAt = stringValue(asRecord(asRecord(response.data.items?.[0])?.contentDetails)?.videoPublishedAt);
+      if (publishedAt) lastUploads.set(channelId, publishedAt);
+    } catch (error) {
+      // Channels with no uploads (or a hidden uploads playlist) answer 404; anything else, notably quota, must surface.
+      if (toSafeError(error).code === 'quota_exhausted') throw error;
+    }
+  }
+  return {
+    quotaUnits,
+    items: items.map((item) => {
+      const info = channels.get(item.channelId);
+      const lastUploadAt = lastUploads.get(item.channelId);
+      return {
+        ...item,
+        ...(info?.subscriberCount !== undefined ? { subscriberCount: info.subscriberCount } : {}),
+        ...(info?.subscriberCountHidden ? { subscriberCountHidden: true } : {}),
+        ...(info?.videoCount !== undefined ? { videoCount: info.videoCount } : {}),
+        ...(lastUploadAt ? { lastUploadAt } : {}),
+      };
+    }),
+  };
+}
+
+function countOf<Key extends string>(key: Key, value: unknown): Partial<Record<Key, number>> {
+  const parsed = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? { [key]: parsed } as Partial<Record<Key, number>> : {};
 }
 
 function normalizeSubscription(value: unknown): SubscriptionSummary[] {

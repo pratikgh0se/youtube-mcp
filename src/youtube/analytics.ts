@@ -1,6 +1,7 @@
 import { toSafeError } from '../errors.js';
 import type { OAuthService } from '../auth/oauth.js';
 import { YouTubeClient, type YouTubeAnalyticsApi } from './client.js';
+import { buildReportQuery, type CreatorReportInput, type CreatorReportQuery } from './creator-report.js';
 
 export type DateRange = {
   startDate: string;
@@ -25,6 +26,13 @@ export type RetentionPoint = {
   elapsedVideoTimeRatio: number;
   audienceWatchRatio: number;
   relativeRetentionPerformance: number;
+};
+
+export type CreatorReport = {
+  query: Omit<CreatorReportQuery, 'ids'>;
+  columns: string[];
+  rows: Array<Record<string, string | number | null>>;
+  rowCount: number;
 };
 
 export const overviewMetrics =
@@ -81,6 +89,21 @@ export class CreatorAnalyticsService {
         metrics: retentionMetrics,
       });
       return normalizeRetention(response.data);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  /** Flexible allowlisted report; validation happens before any provider call. */
+  async report(input: CreatorReportInput): Promise<CreatorReport> {
+    const { ids, ...query } = buildReportQuery(input, this.today());
+    try {
+      const response = await (await this.authorized()).reports.query({ ids, ...query });
+      const columns = (response.data.columnHeaders ?? []).map((header) => stringAt(asRecord(header) ?? {}, 'name') ?? '');
+      const rows = columns.some((name) => !name) ? [] : (response.data.rows ?? []).map((row) => Object.fromEntries(
+        columns.map((name, index) => [name, cell(row[index])]),
+      ));
+      return { query, columns, rows, rowCount: rows.length };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -158,4 +181,8 @@ function stringAt(row: Record<string, unknown>, name: string): string | undefine
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function cell(value: unknown): string | number | null {
+  return typeof value === 'string' || typeof value === 'number' ? value : null;
 }

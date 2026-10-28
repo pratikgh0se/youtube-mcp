@@ -39,11 +39,14 @@ function fakeDependencies(): McpDependencies {
       getVideo: async ({ videoId }) => ({ items: [{ id: videoId, title: 'Video', channelId: 'c1' }], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
       getChannel: async ({ channelId }) => ({ items: [{ id: channelId, title: 'Channel' }], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
       getComments: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
+      trending: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' as const } }),
+      listChannelVideos: async () => ({ items: [], channelId: 'c1', uploadsPlaylistId: 'u1', context: { quotaUnits: 3, source: 'youtube_data_api' as const } }),
       getTranscript: async () => ({ available: false, source: 'best_effort' }),
     },
     account: {
       myAccount: async () => ({ id: 'c1', title: 'Channel' }),
       listSubscriptions: async () => [],
+      listSubscriptionsPage: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' as const } }),
       listChannelCommentThreads: async () => [],
       subscribe: async ({ channelId }) => ({ subscriptionId: 'sub1', channelId }),
       unsubscribe: async ({ subscriptionId }) => ({ subscriptionId, unsubscribed: true }),
@@ -54,6 +57,7 @@ function fakeDependencies(): McpDependencies {
       overview: async () => ({ views: 1, estimatedMinutesWatched: 2, averageViewDuration: 3, likes: 4, comments: 5, subscribersGained: 6, subscribersLost: 7 }),
       topVideos: async () => [],
       retention: async () => [],
+      report: async () => ({ query: { startDate: '2026-01-01', endDate: '2026-01-02', metrics: 'views' }, columns: ['views'], rows: [], rowCount: 0 }),
     },
     resources: {
       listOwnedVideos: async ({ maxResults, pageToken }: { maxResults?: number; pageToken?: string }) => ({
@@ -115,6 +119,8 @@ function fakeDependencies(): McpDependencies {
       preflightSetStatus: async () => moderationPreview('planned'), setStatus: async () => ({ ...moderationReceipt(), commentId: 'comment-1', moderationStatus: 'published' as const }),
       preflightDelete: async () => moderationPreview('planned'), delete: async () => ({ ...moderationReceipt(), commentId: 'comment-1', deleted: true as const }),
     },
+    channelProfile: { preflightUpdate: async () => { throw new Error('unused'); }, update: async () => { throw new Error('unused'); } },
+    subscriptions: { preflightUnsubscribeMany: async () => { throw new Error('unused'); }, unsubscribeMany: async () => { throw new Error('unused'); } },
     approvals: { approve: async () => moderationPreview('approved') },
     curation: {
       savePolicy: (input) => ({ profileId: 'consumer-a', ...input }),
@@ -392,6 +398,35 @@ describe('createMcpServer', () => {
     expect(JSON.stringify(denied)).toContain('confirmation_required');
     expect(received).toEqual({ channelId: 'c1', confirm: true });
     expect(confirmed.structuredContent).toEqual({ subscriptionId: 'sub1', channelId: 'c1' });
+
+    await client.close();
+    await server.close();
+  });
+  it('registers the v0.3.0 tools with the right hints and routes their inputs', async () => {
+    const seen: Record<string, unknown> = {};
+    const dependencies = fakeDependencies();
+    dependencies.creator.report = async (input) => { seen.report = input; return { query: { startDate: 'a', endDate: 'b', metrics: 'views' }, columns: ['views'], rows: [{ views: 1 }], rowCount: 1 }; };
+    dependencies.account.listSubscriptionsPage = async (input) => { seen.subs = input; return { items: [], context: { quotaUnits: 1, source: 'youtube_data_api' } }; };
+    dependencies.public.search = async (input) => { seen.search = input; return { items: [], context: { quotaUnits: 100, source: 'youtube_data_api' } }; };
+    const { client, server } = await connectedServer(dependencies);
+    const tools = (await client.listTools()).tools;
+    const read = ['youtube_creator_report', 'youtube_trending', 'youtube_list_channel_videos'];
+    const write = ['youtube_preflight_update_channel', 'youtube_update_channel', 'youtube_preflight_unsubscribe_many', 'youtube_unsubscribe_many'];
+    for (const name of read) expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ readOnlyHint: true });
+    for (const name of write) expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ destructiveHint: true });
+    expect(tools.find((tool) => tool.name === 'youtube_update_channel')?.inputSchema.required).toEqual(expect.arrayContaining(['approvalId']));
+    expect(tools.find((tool) => tool.name === 'youtube_unsubscribe_many')?.inputSchema.required).toEqual(expect.arrayContaining(['subscriptionIds', 'approvalId']));
+
+    await client.callTool({ name: 'youtube_creator_report', arguments: { metrics: ['views'], dimensions: ['day'] } });
+    await client.callTool({ name: 'youtube_list_subscriptions', arguments: { details: true, maxResults: 5, pageToken: 'p' } });
+    await client.callTool({ name: 'youtube_search', arguments: { query: 'q', order: 'date', videoDuration: 'short' } });
+    const bad = await client.callTool({ name: 'youtube_search', arguments: { query: 'q', order: 'nope' } });
+    expect(seen).toEqual({
+      report: { metrics: ['views'], dimensions: ['day'] },
+      subs: { details: true, maxResults: 5, pageToken: 'p' },
+      search: { query: 'q', order: 'date', videoDuration: 'short' },
+    });
+    expect(bad).toMatchObject({ isError: true });
 
     await client.close();
     await server.close();

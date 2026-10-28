@@ -58,11 +58,21 @@ export type QuotaContext = {
 export type ToolResult<T> = {
   items: T;
   context: QuotaContext;
+  nextPageToken?: string;
 };
 
 export type SearchInput = {
   query: string;
   maxResults?: number;
+  order?: 'relevance' | 'date' | 'viewCount' | 'rating' | 'title';
+  publishedAfter?: string;
+  publishedBefore?: string;
+  videoDuration?: 'any' | 'short' | 'medium' | 'long';
+  channelId?: string;
+  regionCode?: string;
+  relevanceLanguage?: string;
+  safeSearch?: 'none' | 'moderate' | 'strict';
+  pageToken?: string;
 };
 
 export type VideoInput = {
@@ -176,6 +186,10 @@ export type SubscriptionSummary = {
   subscriptionId: string;
   channelId: string;
   title?: string;
+  subscriberCount?: number;
+  subscriberCountHidden?: boolean;
+  videoCount?: number;
+  lastUploadAt?: string;
 };
 
 export type SubscriptionResult = {

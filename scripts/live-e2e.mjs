@@ -69,6 +69,9 @@ const QUOTA = {
   youtube_import_takeout: 0, youtube_consumption_profile: 0, youtube_consumption_trends: 0, youtube_save_curation_policy: 0,
   youtube_save_curation_candidate: 0, youtube_propose_consumption_queue: 0, youtube_reset_consumption_data: 0,
   youtube_approve: 0,
+  // v0.3.0: reads that return context.quotaUnits use it; these are fallbacks for tools that do not.
+  youtube_creator_report: 0, youtube_preflight_update_channel: 2, youtube_update_channel: 52,
+  youtube_preflight_unsubscribe_many: 2, youtube_unsubscribe_many: 102,
 };
 const SPENT_BY = {};
 let quotaUnits = 0;
@@ -76,7 +79,7 @@ let quotaUnits = 0;
 // Tool groups; used for report grouping and for explaining "not covered" tools.
 const GROUPS = {
   account: ['youtube_auth_status', 'youtube_my_account', 'youtube_get_channel'],
-  public: ['youtube_search', 'youtube_get_video', 'youtube_get_transcript', 'youtube_list_video_categories', 'youtube_get_comments'],
+  public: ['youtube_search', 'youtube_trending', 'youtube_list_channel_videos', 'youtube_get_video', 'youtube_get_transcript', 'youtube_list_video_categories', 'youtube_get_comments'],
   uploads: ['youtube_preflight_upload', 'youtube_approve', 'youtube_upload_video', 'youtube_get_upload_status', 'youtube_preflight_resume_upload', 'youtube_resume_upload', 'youtube_preflight_cancel_upload', 'youtube_cancel_upload'],
   'your-videos': ['youtube_list_owned_videos', 'youtube_get_owned_video'],
   'edit-video': ['youtube_preflight_update_metadata', 'youtube_approve', 'youtube_update_metadata', 'youtube_preflight_set_thumbnail', 'youtube_set_thumbnail'],
@@ -84,8 +87,9 @@ const GROUPS = {
   captions: ['youtube_preflight_caption_upload', 'youtube_upload_caption', 'youtube_list_caption_tracks', 'youtube_preflight_caption_update', 'youtube_update_caption', 'youtube_download_caption', 'youtube_preflight_caption_delete', 'youtube_delete_caption'],
   playlists: ['youtube_list_playlists', 'youtube_get_playlist', 'youtube_list_playlist_items', 'youtube_preflight_create_playlist', 'youtube_approve', 'youtube_create_playlist', 'youtube_preflight_update_playlist', 'youtube_update_playlist', 'youtube_preflight_delete_playlist', 'youtube_delete_playlist', 'youtube_preflight_add_playlist_item', 'youtube_add_playlist_item', 'youtube_preflight_remove_playlist_item', 'youtube_remove_playlist_item', 'youtube_preflight_reorder_playlist_item', 'youtube_reorder_playlist_item'],
   comments: ['youtube_create_comment', 'youtube_list_channel_comment_threads', 'youtube_preflight_reply_to_comment', 'youtube_approve', 'youtube_reply_to_comment', 'youtube_find_comment_reply', 'youtube_list_moderation_comments', 'youtube_get_moderation_comment', 'youtube_preflight_set_comment_moderation_status', 'youtube_set_comment_moderation_status', 'youtube_preflight_delete_comment', 'youtube_delete_comment'],
-  analytics: ['youtube_creator_overview', 'youtube_creator_top_videos', 'youtube_creator_retention'],
-  viewer: ['youtube_list_subscriptions', 'youtube_subscribe', 'youtube_unsubscribe', 'youtube_rate_video'],
+  analytics: ['youtube_creator_overview', 'youtube_creator_top_videos', 'youtube_creator_retention', 'youtube_creator_report'],
+  channel: ['youtube_preflight_update_channel', 'youtube_approve', 'youtube_update_channel'],
+  viewer: ['youtube_list_subscriptions', 'youtube_subscribe', 'youtube_unsubscribe', 'youtube_preflight_unsubscribe_many', 'youtube_unsubscribe_many', 'youtube_rate_video'],
   'watch-history': ['youtube_import_takeout', 'youtube_consumption_profile', 'youtube_consumption_trends', 'youtube_save_curation_policy', 'youtube_save_curation_candidate', 'youtube_propose_consumption_queue', 'youtube_reset_consumption_data'],
 };
 const groupOf = (tool) => Object.entries(GROUPS).find(([, tools]) => tools.includes(tool))?.[0] ?? 'other';
@@ -330,6 +334,7 @@ async function main() {
   await runGroup('lifecycle', lifecycleGroup);
   await runGroup('comments', commentsGroup);
   await runGroup('analytics', analyticsGroup);
+  await runGroup('channel', channelGroup);
   await runGroup('viewer', viewerGroup);
   await runGroup('watch-history', watchHistoryGroup);
   await archiveLeftovers();
@@ -346,6 +351,17 @@ async function publicGroup() {
     if (transcript.available && transcript.text) { state.publicVideoId = candidate; found = true; record('youtube_get_transcript', 'PASS', Date.now() - started); break; }
   }
   if (!found) record('youtube_get_transcript', 'FAIL', Date.now() - started, `no transcript available for ${PUBLIC_VIDEO_CANDIDATES.join(',')}`);
+  await step('youtube_search', { query: 'youtube', maxResults: 3, order: 'date', videoDuration: 'short', regionCode: 'US', relevanceLanguage: 'en', safeSearch: 'moderate', publishedAfter: new Date(Date.now() - 30 * 86_400_000).toISOString() },
+    { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
+  await step('youtube_trending', { regionCode: 'US', maxResults: 5 }, { check: (v) => (v.items?.length > 0 && v.items[0].viewCount !== undefined ? undefined : 'no trending videos with statistics') });
+  const uploads = await step('youtube_list_channel_videos', { channelId: '@YouTube', maxResults: 5 }, {
+    check: (v) => (v.items?.length > 0 && v.channelId && v.items.every((item) => item.channelId === v.channelId) ? undefined : 'no uploads for @YouTube'),
+  });
+  if (uploads.nextPageToken) {
+    await step('youtube_list_channel_videos', { channelId: uploads.channelId, maxResults: 5, pageToken: uploads.nextPageToken }, {
+      check: (v) => (v.items?.length > 0 && v.items[0].id !== uploads.items[0].id ? undefined : 'second page empty or repeated'),
+    });
+  }
   await step('youtube_get_video', { videoId: state.publicVideoId }, { check: (v) => (v.items?.[0]?.id === state.publicVideoId ? undefined : 'video not returned') });
   await step('youtube_list_video_categories', { regionCode: 'US' }, { check: (v) => (v.items?.length > 0 ? undefined : 'no categories') });
   await step('youtube_get_comments', { videoId: state.publicVideoId, maxResults: 3 }, { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
@@ -827,10 +843,52 @@ async function analyticsGroup() {
   await step('youtube_creator_overview', range, { check: (v) => (v && typeof v === 'object' ? undefined : 'malformed') });
   await step('youtube_creator_top_videos', { ...range, limit: 5 }, { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
   await step('youtube_creator_retention', { videoId: state.videoId ?? state.publicVideoId }, { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
+  // Zero rows are fine on a quiet test channel; the report must still come back well-formed.
+  const wellFormed = (columns) => (v) => (Array.isArray(v.rows) && v.rowCount === v.rows.length && columns.every((name) => v.columns?.includes(name)) ? undefined : 'malformed report');
+  await step('youtube_creator_report', { ...range, metrics: ['views', 'estimatedMinutesWatched'], dimensions: ['day'], sort: ['day'] }, { check: wellFormed(['day', 'views']) });
+  await step('youtube_creator_report', { ...range, metrics: ['views'], dimensions: ['insightTrafficSourceType'], sort: ['-views'] }, { check: wellFormed(['insightTrafficSourceType', 'views']) });
+  await step('youtube_creator_report', { ...range, metrics: ['views', 'averageViewDuration'], dimensions: ['deviceType'] }, { check: wellFormed(['deviceType', 'views']) });
+}
+
+/** Round trip on the dedicated test channel: description "<original> [e2e <ts>]", then the exact original again. */
+async function channelGroup() {
+  const field = (preview) => preview.desired?.current?.description ?? '';
+  const readDescription = async () => ((await call('youtube_my_account')).description ?? '');
+  const suffix = ` [e2e ${stamp}]`;
+  // Unapproved probe: the preview's "current" snapshot is the exact stored description (my_account may trim).
+  const probe = await step('youtube_preflight_update_channel', { description: `${PREFIX}probe ${stamp}` }, { check: (v) => (v.approvalId && v.kind === 'channel.update' && v.desired?.current ? undefined : 'malformed preview') });
+  const original = field(probe);
+  if (original.length + suffix.length > 1000) throw new E2EError('channel description too long to append the e2e marker (1000 char limit)', 'description_too_long', 'youtube_preflight_update_channel');
+  const changed = `${original}${suffix}`;
+  const forgetRestore = addCleanup('channel description', () => approvedQuiet(original));
+
+  await approved({
+    pre: 'youtube_preflight_update_channel', preArgs: { description: changed }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: changed }, attempts: 2,
+  });
+  await retry(async () => {
+    if (await readDescription() !== changed) throw new E2EError('description not updated yet', 'verify_failed', 'youtube_update_channel');
+  }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `accepted but not visible: ${error.message}`));
+
+  await approved({
+    pre: 'youtube_preflight_update_channel', preArgs: { description: original }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: original }, attempts: 2,
+  });
+  forgetRestore();
+  await retry(async () => {
+    const now = await readDescription();
+    if (now !== original) throw new E2EError('original description not restored exactly', 'verify_failed', 'youtube_update_channel');
+  }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `restore not verified: ${error.message}`));
+}
+
+function approvedQuiet(description) {
+  return quietApproved('youtube_preflight_update_channel', { description }, 'youtube_approve', 'youtube_update_channel', { description });
 }
 
 async function viewerGroup() {
   const subs = await step('youtube_list_subscriptions', { maxResults: 50 }, { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
+  // details costs about 1 extra quota unit per returned channel; keep the page small.
+  await step('youtube_list_subscriptions', { maxResults: 5, details: true }, {
+    check: (v) => (Array.isArray(v.items) && v.context?.quotaUnits >= 1 && v.items.every((item) => item.subscriptionId && item.channelId && (item.subscriberCount !== undefined || item.subscriberCountHidden === true || item.videoCount !== undefined)) ? undefined : 'details missing'),
+  });
   const target = SUBSCRIBE_CANDIDATES.find((id) => !subs.items.some((item) => item.channelId === id));
   if (!target) {
     skipTools(['youtube_subscribe', 'youtube_unsubscribe'], 'every candidate channel was already subscribed; existing subscriptions are never touched');
@@ -847,6 +905,29 @@ async function viewerGroup() {
       const page = await call('youtube_list_subscriptions', { maxResults: 50 });
       if (page.items.some((item) => item.subscriptionId === made.subscriptionId)) throw new E2EError('still subscribed', 'verify_failed', 'youtube_list_subscriptions');
     }, { attempts: 5 }).catch((error) => record('youtube_unsubscribe', 'FAIL', 0, `accepted but still listed: ${error.message}`));
+  }
+
+  // Bulk removal: subscribe to the two stable public channels (only if neither is already subscribed), then remove both via preflight -> approve -> execute.
+  const fresh = SUBSCRIBE_CANDIDATES.filter((id) => !subs.items.some((item) => item.channelId === id));
+  if (fresh.length < SUBSCRIBE_CANDIDATES.length) {
+    skipTools(['youtube_preflight_unsubscribe_many', 'youtube_unsubscribe_many'], 'a candidate channel was already subscribed; existing subscriptions are never touched');
+  } else {
+    const made = [];
+    for (const channelId of fresh) {
+      const sub = await step('youtube_subscribe', { channelId, confirm: true }, { check: (v) => (v.subscriptionId ? undefined : 'no subscriptionId') });
+      made.push(sub.subscriptionId);
+      addCleanup(`subscription ${sub.subscriptionId}`, () => call('youtube_unsubscribe', { subscriptionId: sub.subscriptionId, confirm: true }).catch((error) => { if (error.status !== 404) throw error; }));
+    }
+    const removal = await approved({
+      pre: 'youtube_preflight_unsubscribe_many', preArgs: { subscriptionIds: made }, approve: 'youtube_approve', exec: 'youtube_unsubscribe_many', execArgs: { subscriptionIds: made }, attempts: 3, delayMs: 5_000,
+    });
+    if (!removal.complete || removal.summary?.removed + removal.summary?.alreadyGone !== made.length) {
+      record('youtube_unsubscribe_many', 'FAIL', 0, `incomplete: ${JSON.stringify(removal.summary)} ${removal.stoppedEarly?.message ?? ''}`);
+    }
+    await retry(async () => {
+      const page = await call('youtube_list_subscriptions', { maxResults: 50 });
+      if (page.items.some((item) => made.includes(item.subscriptionId))) throw new E2EError('still subscribed', 'verify_failed', 'youtube_list_subscriptions');
+    }, { attempts: 5 }).catch((error) => record('youtube_unsubscribe_many', 'FAIL', 0, `accepted but still listed: ${error.message}`));
   }
 
   // YouTube exposes no read API for a viewer's current rating, so the prior state cannot be restored exactly;

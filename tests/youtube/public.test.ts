@@ -64,7 +64,7 @@ describe('PublicService', () => {
     });
     expect(requests).toEqual([{
       part: 'snippet',
-      fields: 'items(id/videoId,snippet(title,channelId,description,publishedAt))',
+      fields: 'nextPageToken,items(id/videoId,snippet(title,channelId,description,publishedAt))',
       q: 'thai food',
       maxResults: 2,
       type: 'video',

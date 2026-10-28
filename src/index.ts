@@ -26,6 +26,8 @@ import { UploadService } from './youtube/uploads.js';
 import { CreatorContentService, createCreatorContentProvider } from './youtube/creator-content.js';
 import { PlaylistService, createPlaylistProvider } from './youtube/playlists.js';
 import { ModerationService, createModerationProvider } from './youtube/moderation.js';
+import { ChannelProfileService, createChannelProvider } from './youtube/channel-profile.js';
+import { SubscriptionCurationService, createSubscriptionProvider } from './youtube/subscriptions.js';
 import type { AppConfig } from './types.js';
 
 async function main(arguments_: string[]): Promise<void> {
@@ -83,6 +85,8 @@ async function main(arguments_: string[]): Promise<void> {
     content,
     playlists,
     moderation,
+    channelProfile: new ChannelProfileService(operations, createChannelProvider(oauth, client), creatorProfile, resources),
+    subscriptions: new SubscriptionCurationService(operations, createSubscriptionProvider(oauth, client), creatorProfile),
     approvals: createApprovalTool(operations, creatorProfile),
     curation,
     importer: new TakeoutImporter(store),
