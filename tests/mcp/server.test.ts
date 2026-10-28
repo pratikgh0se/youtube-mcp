@@ -89,6 +89,8 @@ function fakeDependencies(): McpDependencies {
       cancel: async () => ({ uploadId: 'upload-1', state: 'cancelled' } satisfies UploadStatusResult),
     },
     content: {
+      preflightArchiveVideo: async () => ({ approvalId: 'archive-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.archive', targetId: 'video-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
+      archiveVideo: async () => ({ operationId: 'archive-approval', state: 'succeeded' as const, videoId: 'video-1', privacyStatus: 'private' as const, scheduled: false as const }),
       preflightMetadataUpdate: async () => ({ approvalId: 'metadata-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.metadata.update', targetId: 'video-1', desired: { snippet: { title: 'New' } }, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
       preflightThumbnail: async () => ({ approvalId: 'thumbnail-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.thumbnail.set', targetId: 'video-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
       setThumbnail: async () => ({ operationId: 'thumbnail-approval', state: 'succeeded' as const, videoId: 'video-1' }),
@@ -140,6 +142,8 @@ describe('createMcpServer', () => {
 
     expect(result.tools.map((tool) => tool.name).sort()).toEqual(expect.arrayContaining([
       'youtube_approve_creator_content',
+      'youtube_archive_video',
+      'youtube_preflight_archive_video',
       'youtube_approve_upload',
       'youtube_auth_status',
       'youtube_cancel_upload',

@@ -61,6 +61,8 @@ const metadataFields = {
 };
 export const preflightMetadataUpdateSchema = z.object({ videoId: id, ...metadataFields });
 export const updateMetadataSchema = preflightMetadataUpdateSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
+export const preflightArchiveVideoSchema = z.object({ videoId: id });
+export const archiveVideoSchema = preflightArchiveVideoSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const preflightThumbnailSchema = z.object({ videoId: id, filePath: z.string().min(1), mimeType: z.enum(['image/jpeg', 'image/png']) });
 export const setThumbnailSchema = preflightThumbnailSchema.extend({ approvalId: id, confirm: z.boolean().optional() });
 export const approveCreatorContentSchema = z.object({ approvalId: id, confirm: z.boolean().optional() });

@@ -87,6 +87,7 @@ export type Page<T> = {
 
 export type OwnedVideo = VideoSummary & {
   privacyStatus?: string;
+  publishAt?: string;
   processingStatus?: string;
   etag?: string;
 };

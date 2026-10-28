@@ -32,6 +32,7 @@ export type MetadataUpdateInput = MetadataFields & {
   approvalId?: string;
   confirm?: boolean;
 };
+export type ArchiveVideoInput = { videoId: string; approvalId?: string; confirm?: boolean };
 export type ThumbnailInput = { videoId: string; filePath: string; mimeType: 'image/jpeg' | 'image/png'; approvalId?: string; confirm?: boolean };
 export type CaptionUploadInput = { videoId: string; filePath: string; mimeType: CaptionMimeType; language: string; name: string; isDraft?: boolean; approvalId?: string; confirm?: boolean };
 export type CaptionUpdateInput = CaptionUploadInput & { captionId: string };
@@ -108,6 +109,36 @@ export class CreatorContentService {
       });
       await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
       return { operationId: input.approvalId, state: 'succeeded', videoId: input.videoId };
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  async preflightArchiveVideo(input: ArchiveVideoInput): Promise<OperationPreview> {
+    try {
+      const current = await this.currentVideo(input.videoId);
+      if (isArchived(current)) throw alreadyArchivedError();
+      return this.preflight('video.archive', input.videoId, archiveDesired(current), fingerprint(current), { tool: 'youtube_get_owned_video', arguments: { videoId: input.videoId } });
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  async archiveVideo(input: ArchiveVideoInput & { approvalId: string }): Promise<{ operationId: string; state: 'succeeded'; videoId: string; privacyStatus: 'private'; scheduled: false }> {
+    try {
+      await this.requireApproved(input, 'video.archive', input.videoId);
+      const current = await this.currentVideo(input.videoId);
+      if (isArchived(current)) throw alreadyArchivedError();
+      const preview = await this.operations.requireApproved({ approvalId: input.approvalId, confirm: input.confirm, profileId: this.profile.id, channelId: this.profile.channelId });
+      this.requireContext(preview, 'video.archive', input.videoId, archiveDesired(current));
+      await this.claim(input, 'video.archive', input.videoId, undefined, fingerprint(current));
+      await this.providerOutcome(input.approvalId, { tool: 'youtube_get_owned_video', arguments: { videoId: input.videoId } }, async () => {
+        const { publishAt: _scheduled, ...status } = current.status;
+        const response = await this.provider.updateVideo({ id: current.id, snippet: current.snippet, status: { ...status, privacyStatus: 'private' } });
+        if (response.id && response.id !== input.videoId) throw providerError('video');
+      });
+      await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
+      return { operationId: input.approvalId, state: 'succeeded', videoId: input.videoId, privacyStatus: 'private', scheduled: false };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -358,6 +389,18 @@ type CreatorContentApi = YouTubeDataApi & {
     delete: NonNullable<YouTubeDataApi['captions']['delete']>;
   };
 };
+
+function isArchived(video: CreatorVideo): boolean { return video.status.privacyStatus === 'private' && !video.status.publishAt; }
+function archiveDesired(video: CreatorVideo): Record<string, unknown> {
+  return {
+    videoId: video.id,
+    title: video.snippet.title,
+    current: { privacyStatus: video.status.privacyStatus ?? 'unknown', ...(video.status.publishAt ? { publishAt: video.status.publishAt } : {}) },
+    result: { privacyStatus: 'private', scheduled: false },
+    note: 'Reversible: only visibility changes. Make it public or unlisted again with youtube_update_metadata.',
+  };
+}
+function alreadyArchivedError(): AppError { return new AppError('already_archived', 'This video is already private and not scheduled, so there is nothing to archive.', 'No action needed. Use youtube_update_metadata to change its visibility.', false); }
 
 function metadataDesired(input: MetadataUpdateInput): MetadataDesired {
   return {

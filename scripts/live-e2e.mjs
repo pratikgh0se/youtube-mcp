@@ -8,6 +8,10 @@
 //   YOUTUBE_E2E_COMMENT_VIDEO_ID             unlisted/public video owned by the channel that accepts comments;
 //                                            without it the comment + moderation group is SKIPPED
 //   YOUTUBE_E2E_GROUPS                       comma list of groups to run (account is always run); others are SKIPPED
+//   YOUTUBE_E2E_FRESH_UPLOAD=1               lifecycle group: always upload a new test video instead of reusing an archived one
+//                                            (reuse = newest private, unscheduled video titled "youtube-mcp e2e lifecycle ...")
+//   YOUTUBE_E2E_ARCHIVE_VIDEO_IDS            comma list of owned video ids to archive (private, unscheduled) at the end of the run;
+//                                            each id must be confirmed as owned by the confirmed channel first
 //   YOUTUBE_E2E_TAKEOUT                      path to a Takeout watch-history .json/.html instead of the synthetic one
 //   YOUTUBE_E2E_OUT_DIR                      media + report directory (default: <os tmpdir>/youtube-mcp-e2e)
 //   YOUTUBE_E2E_FFMPEG                       ffmpeg binary (default: /opt/homebrew/bin/ffmpeg or `ffmpeg`)
@@ -35,6 +39,8 @@ const confirmChannel = env.YOUTUBE_E2E_CONFIRM_CHANNEL;
 const reuseVideoId = env.YOUTUBE_E2E_REUSE_VIDEO_ID || undefined;
 const commentVideoId = env.YOUTUBE_E2E_COMMENT_VIDEO_ID || undefined;
 const groupFilter = env.YOUTUBE_E2E_GROUPS ? new Set(env.YOUTUBE_E2E_GROUPS.split(',').map((g) => g.trim()).filter(Boolean)) : undefined;
+const freshUpload = env.YOUTUBE_E2E_FRESH_UPLOAD === '1';
+const archiveVideoIds = (env.YOUTUBE_E2E_ARCHIVE_VIDEO_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean);
 const takeoutOverride = env.YOUTUBE_E2E_TAKEOUT || undefined;
 const outDir = env.YOUTUBE_E2E_OUT_DIR || join(tmpdir(), 'youtube-mcp-e2e');
 const mediaDir = join(outDir, 'e2e-media');
@@ -43,6 +49,7 @@ const stamp = new Date().toISOString();
 const fileStamp = stamp.replace(/[:.]/g, '-');
 const PREFIX = 'youtube-mcp e2e ';
 const runTitle = `${PREFIX}${stamp}`;
+const LIFECYCLE_PREFIX = `${PREFIX}lifecycle `;
 
 // Stable public fixtures.
 const PUBLIC_VIDEO_CANDIDATES = ['dQw4w9WgXcQ', 'jNQXAC9IVRw', '9bZkp7q19f0'];
@@ -57,7 +64,7 @@ const QUOTA = {
   youtube_create_playlist: 50, youtube_update_playlist: 50, youtube_delete_playlist: 50, youtube_add_playlist_item: 50,
   youtube_remove_playlist_item: 50, youtube_reorder_playlist_item: 50, youtube_create_comment: 50, youtube_reply_to_comment: 50,
   youtube_set_comment_moderation_status: 50, youtube_delete_comment: 50, youtube_subscribe: 50, youtube_unsubscribe: 50,
-  youtube_rate_video: 50,
+  youtube_rate_video: 50, youtube_archive_video: 50, youtube_preflight_archive_video: 2,
   youtube_auth_status: 0, youtube_get_upload_status: 0, youtube_creator_overview: 0, youtube_creator_top_videos: 0, youtube_creator_retention: 0,
   youtube_import_takeout: 0, youtube_consumption_profile: 0, youtube_consumption_trends: 0, youtube_save_curation_policy: 0,
   youtube_save_curation_candidate: 0, youtube_propose_consumption_queue: 0, youtube_reset_consumption_data: 0,
@@ -73,6 +80,7 @@ const GROUPS = {
   uploads: ['youtube_preflight_upload', 'youtube_approve_upload', 'youtube_upload_video', 'youtube_get_upload_status', 'youtube_preflight_resume_upload', 'youtube_resume_upload', 'youtube_preflight_cancel_upload', 'youtube_cancel_upload'],
   'your-videos': ['youtube_list_owned_videos', 'youtube_get_owned_video'],
   'edit-video': ['youtube_preflight_update_metadata', 'youtube_approve_creator_content', 'youtube_update_metadata', 'youtube_preflight_set_thumbnail', 'youtube_set_thumbnail'],
+  lifecycle: ['youtube_preflight_archive_video', 'youtube_archive_video'],
   captions: ['youtube_preflight_caption_upload', 'youtube_upload_caption', 'youtube_list_caption_tracks', 'youtube_preflight_caption_update', 'youtube_update_caption', 'youtube_preflight_caption_download', 'youtube_download_caption', 'youtube_preflight_caption_delete', 'youtube_delete_caption'],
   playlists: ['youtube_list_playlists', 'youtube_get_playlist', 'youtube_list_playlist_items', 'youtube_preflight_create_playlist', 'youtube_approve_playlist', 'youtube_create_playlist', 'youtube_preflight_update_playlist', 'youtube_update_playlist', 'youtube_preflight_delete_playlist', 'youtube_delete_playlist', 'youtube_preflight_add_playlist_item', 'youtube_add_playlist_item', 'youtube_preflight_remove_playlist_item', 'youtube_remove_playlist_item', 'youtube_preflight_reorder_playlist_item', 'youtube_reorder_playlist_item'],
   comments: ['youtube_create_comment', 'youtube_list_channel_comment_threads', 'youtube_preflight_reply_to_comment', 'youtube_approve_moderation', 'youtube_reply_to_comment', 'youtube_find_comment_reply', 'youtube_list_moderation_comments', 'youtube_get_moderation_comment', 'youtube_preflight_set_comment_moderation_status', 'youtube_set_comment_moderation_status', 'youtube_preflight_delete_comment', 'youtube_delete_comment'],
@@ -257,6 +265,16 @@ async function quietApproved(pre, preArgs, approve, exec, execArgs) {
 }
 const deletePlaylistQuiet = (playlistId) => quietApproved('youtube_preflight_delete_playlist', { playlistId }, 'youtube_approve_playlist', 'youtube_delete_playlist', { playlistId });
 const deleteCaptionQuiet = (videoId, captionId) => quietApproved('youtube_preflight_caption_delete', { videoId, captionId }, 'youtube_approve_creator_content', 'youtube_delete_caption', { videoId, captionId });
+/** Archive (private, unscheduled) without recording results; an already-archived video counts as success. Returns true if a change was made. */
+async function archiveVideoQuiet(videoId) {
+  try {
+    await quietApproved('youtube_preflight_archive_video', { videoId }, 'youtube_approve_creator_content', 'youtube_archive_video', { videoId });
+    return true;
+  } catch (error) {
+    if (error.code === 'already_archived') return false;
+    throw error;
+  }
+}
 const deleteCommentQuiet = (commentId) => quietApproved('youtube_preflight_delete_comment', { commentId }, 'youtube_approve_moderation', 'youtube_delete_comment', { commentId });
 
 /** Registers a cleanup; returns a function that marks it done (call after the main flow deleted the resource). */
@@ -309,10 +327,12 @@ async function main() {
   await runGroup('edit-video', editVideoGroup);
   await runGroup('captions', captionsGroup);
   await runGroup('playlists', playlistsGroup);
+  await runGroup('lifecycle', lifecycleGroup);
   await runGroup('comments', commentsGroup);
   await runGroup('analytics', analyticsGroup);
   await runGroup('viewer', viewerGroup);
   await runGroup('watch-history', watchHistoryGroup);
+  await archiveLeftovers();
   return tools;
 }
 
@@ -331,10 +351,28 @@ async function publicGroup() {
   await step('youtube_get_comments', { videoId: state.publicVideoId, maxResults: 3 }, { check: (v) => (Array.isArray(v.items) ? undefined : 'items missing') });
 }
 
-async function uploadsGroup() {
-  const videoPath = join(mediaDir, 'e2e-test.mp4');
+async function makeTestVideo(name) {
+  const videoPath = join(mediaDir, name);
   await ff(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=24:duration=12', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-shortest', videoPath]);
+  return videoPath;
+}
+
+/** Best effort: wait for YouTube to finish processing (later steps retry on their own). */
+async function waitForProcessing(videoId) {
+  try {
+    await retry(async () => {
+      const owned = await call('youtube_get_owned_video', { videoId });
+      const processing = owned.item?.processingStatus;
+      if (processing !== 'succeeded' && processing !== 'processed') throw new E2EError(`processing ${processing ?? 'pending'}`, 'processing', 'youtube_get_owned_video');
+    }, { attempts: 18, delayMs: 10_000 });
+  } catch (error) {
+    log(`processing not confirmed before timeout (${error.message}); continuing`);
+  }
+}
+
+async function uploadsGroup() {
+  const videoPath = await makeTestVideo('e2e-test.mp4');
   const uploadArgs = { filePath: videoPath, title: runTitle, description: 'Automated youtube-mcp live E2E test video. Safe to delete.', privacyStatus: 'private' };
   const bogus = 'e2e-no-such-upload';
 
@@ -362,15 +400,7 @@ async function uploadsGroup() {
   await step('youtube_get_upload_status', { uploadId: state.uploadId }, { check: (v) => (v.state === 'complete' && v.videoId === state.videoId ? undefined : `status ${v.state}`) });
 
   // Wait for YouTube to finish processing (best effort; later groups retry on their own).
-  try {
-    await retry(async () => {
-      const owned = await call('youtube_get_owned_video', { videoId: state.videoId });
-      const processing = owned.item?.processingStatus;
-      if (processing !== 'succeeded' && processing !== 'processed') throw new E2EError(`processing ${processing ?? 'pending'}`, 'processing', 'youtube_get_owned_video');
-    }, { attempts: 18, delayMs: 10_000 });
-  } catch (error) {
-    log(`processing not confirmed before timeout (${error.message}); continuing`);
-  }
+  await waitForProcessing(state.videoId);
 
   // Resume: the server uploads in a single request, so an interrupted session cannot be produced.
   // Resuming the completed session is the truthful exercise: it must probe and reconcile to complete.
@@ -562,14 +592,182 @@ async function playlistsGroup() {
   }).catch((error) => record('youtube_delete_playlist', 'FAIL', 0, `accepted but playlist still readable: ${error.message}`));
 }
 
+// ---- Video lifecycle: one video through every visibility state, comments while public, then archive ----
+const lifecycleSteps = []; // { step, status, note }
+const lifecycleInfo = { videoId: undefined, reused: false };
+const subStep = (step, status, note = '') => { lifecycleSteps.push({ step, status, note: redact(note).slice(0, 200) }); log(`lifecycle ${step}: ${status}${note ? ` (${redact(note).slice(0, 120)})` : ''}`); };
+
+/** Newest private, unscheduled, processed video titled "youtube-mcp e2e lifecycle ..." (an earlier archived run), if any. */
+async function findArchivedLifecycleVideo() {
+  const page = await call('youtube_list_owned_videos', { maxResults: 50 });
+  for (const item of (page.items ?? []).filter((entry) => entry.title?.startsWith(LIFECYCLE_PREFIX)).slice(0, 3)) {
+    const owned = await call('youtube_get_owned_video', { videoId: item.id });
+    const video = owned.item;
+    if (video?.channelId === state.channelId && video.privacyStatus === 'private' && !video.publishAt && ['succeeded', 'processed'].includes(video.processingStatus)) return video.id;
+  }
+  return undefined;
+}
+
+async function lifecycleGroup() {
+  let videoId;
+  if (!freshUpload) {
+    videoId = await findArchivedLifecycleVideo();
+    if (videoId) { lifecycleInfo.reused = true; log(`lifecycle: reusing archived video ${videoId}`); }
+  }
+  if (!videoId) {
+    const videoPath = await makeTestVideo('e2e-lifecycle.mp4');
+    const uploadArgs = { filePath: videoPath, title: `${LIFECYCLE_PREFIX}${stamp}`, description: 'Automated youtube-mcp lifecycle E2E video. Archived (private) after each run; safe to delete.', privacyStatus: 'private' };
+    const preview = await step('youtube_preflight_upload', uploadArgs, { check: (v) => (v.approvalId ? undefined : 'no approvalId') });
+    await step('youtube_approve_upload', { approvalId: preview.approvalId, confirm: true });
+    const uploaded = await step('youtube_upload_video', { ...uploadArgs, approvalId: preview.approvalId, confirm: true }, {
+      timeout: 600_000, check: (v) => (v.state === 'complete' && v.videoId ? undefined : `upload state ${v.state}`),
+    });
+    videoId = uploaded.videoId;
+    log(`lifecycle: uploaded video ${videoId}`);
+    await waitForProcessing(videoId);
+  }
+  lifecycleInfo.videoId = videoId;
+  let archived = false;
+  addCleanup(`archive lifecycle video ${videoId}`, async () => { if (!archived) await archiveVideoQuiet(videoId); });
+
+  const ownedItem = async () => (await call('youtube_get_owned_video', { videoId })).item;
+  /** Run update_metadata through preflight/approve/execute, then verify with get_owned_video (retried for lag). */
+  async function setState(label, fields, verify, { blocked, attempts = 6 } = {}) {
+    try {
+      await approved({
+        pre: 'youtube_preflight_update_metadata', preArgs: { videoId, ...fields }, approve: 'youtube_approve_creator_content',
+        exec: 'youtube_update_metadata', execArgs: { videoId, ...fields }, attempts: 3, blocked,
+      });
+      await retry(async () => {
+        const problem = verify(await ownedItem());
+        if (problem) throw new E2EError(problem, 'verify_failed', 'youtube_get_owned_video');
+      }, { attempts });
+      subStep(label, 'PASS');
+      return 'PASS';
+    } catch (error) {
+      const refused = blocked?.(error) || (error.code === 'verify_failed' && /kept private/.test(error.message));
+      subStep(label, refused ? 'BLOCKED' : 'FAIL', `${error.status ? `HTTP ${error.status} ${error.reason ?? ''}: ` : ''}${error.message}`);
+      if (refused) return 'BLOCKED';
+      throw error;
+    }
+  }
+  const isPrivacy = (want) => (item) => (item?.privacyStatus === want ? undefined : `privacy is ${item?.privacyStatus}, expected ${want}`);
+  // YouTube may silently keep a video private when the API project is unaudited; report that distinctly.
+  const publicVerify = (item) => (item?.privacyStatus === 'public' ? undefined : item?.privacyStatus === 'private' ? 'update accepted but video was kept private (unaudited API project restriction?)' : `privacy is ${item?.privacyStatus}, expected public`);
+  const publicFields = { privacyStatus: 'public', publish: true, elevated: true };
+  const blocked403 = (error) => error.status === 403;
+
+  try {
+    const start = await ownedItem();
+    if (start?.privacyStatus !== 'private' || start.publishAt) {
+      // A leftover from an aborted run: bring it back to the known start state.
+      await archiveVideoQuiet(videoId);
+      await retry(async () => { const item = await ownedItem(); if (item?.privacyStatus !== 'private' || item.publishAt) throw new E2EError('not private yet', 'verify_failed', 'youtube_get_owned_video'); });
+    }
+    subStep('start: private', 'PASS', lifecycleInfo.reused ? 'reused archived video' : 'fresh upload');
+
+    await setState('private -> unlisted', { privacyStatus: 'unlisted' }, isPrivacy('unlisted'));
+    const firstPublic = await setState('unlisted -> public', publicFields, publicVerify, { blocked: blocked403 });
+    let publicOk = firstPublic === 'PASS';
+    if (publicOk) await setState('public -> private', { privacyStatus: 'private' }, isPrivacy('private'));
+    else subStep('public -> private', 'SKIPPED', 'video never became public');
+
+    // Scheduled publish: set, verify publishAt, then clear it with the archive tools (update_metadata cannot remove publishAt).
+    const publishAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    await setState('private + publishAt (+2d)', { privacyStatus: 'private', publishAt, elevated: true },
+      (item) => (item?.publishAt && Math.abs(Date.parse(item.publishAt) - Date.parse(publishAt)) < 60_000 ? undefined : `publishAt is ${item?.publishAt ?? 'absent'}, expected ${publishAt}`));
+    try {
+      await approved({
+        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve_creator_content',
+        exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
+      });
+      await retry(async () => {
+        const item = await ownedItem();
+        if (item?.privacyStatus !== 'private' || item.publishAt) throw new E2EError(`after clear: privacy ${item?.privacyStatus}, publishAt ${item?.publishAt ?? 'absent'}`, 'verify_failed', 'youtube_get_owned_video');
+      });
+      subStep('clear publishAt (archive_video)', 'PASS');
+    } catch (error) {
+      subStep('clear publishAt (archive_video)', 'FAIL', error.message);
+      throw error;
+    }
+
+    if (publicOk) {
+      const second = await setState('private -> public (again)', publicFields, publicVerify, { blocked: blocked403 });
+      publicOk = second === 'PASS';
+    } else subStep('private -> public (again)', 'SKIPPED', 'public visibility was refused earlier');
+
+    if (publicOk) {
+      await sleep(5_000); // let comments open on the newly public video
+      try {
+        await commentsFlow(videoId);
+        state.lifecycleCommentsDone = true;
+        subStep('comments on public video', 'PASS', 'create, reply, find, moderate, delete reply and comment');
+      } catch (error) {
+        subStep('comments on public video', 'FAIL', `${error.tool ?? ''} ${error.message}`);
+        throw error;
+      }
+    } else {
+      subStep('comments on public video', 'SKIPPED', 'BLOCKED: video could not be made public, so public-comment steps were skipped');
+    }
+
+    // End state: archive (private, unscheduled). From a public video this is the real transition; if the video never left
+    // private it is already archived and preflight refuses with already_archived.
+    if (publicOk) {
+      await approved({
+        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve_creator_content',
+        exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
+      });
+      await retry(async () => {
+        const item = await ownedItem();
+        if (item?.privacyStatus !== 'private' || item.publishAt) throw new E2EError(`after archive: privacy ${item?.privacyStatus}, publishAt ${item?.publishAt ?? 'absent'}`, 'verify_failed', 'youtube_get_owned_video');
+      }).catch((error) => { record('youtube_archive_video', 'FAIL', 0, `archive accepted but ${error.message}`); throw error; });
+      archived = true;
+      subStep('archive public video -> private, unscheduled', 'PASS');
+    } else {
+      archived = true;
+      subStep('archive', 'SKIPPED', 'video was never public; already private and unscheduled');
+    }
+    await guard('youtube_preflight_archive_video', { videoId }, 'already_archived', 'an already-private, unscheduled video is refused as already archived');
+  } catch (error) {
+    // Do not leave the video public/unlisted/scheduled if the run aborted midway.
+    try { await archiveVideoQuiet(videoId); archived = true; subStep('abort cleanup: archive', 'PASS'); } catch (cleanupError) { subStep('abort cleanup: archive', 'FAIL', cleanupError.message); }
+    throw error;
+  } finally {
+    const row = results.get('youtube_archive_video');
+    if (row) row.note = `${lifecycleSteps.map((entry) => `${entry.step}: ${entry.status}`).join(' | ')}${row.note ? ` | ${row.note}` : ''}`.slice(0, 600);
+    log(`lifecycle approx quota so far: ${quotaUnits} units`);
+  }
+}
+
+/** YOUTUBE_E2E_ARCHIVE_VIDEO_IDS: archive each listed video, but only if get_owned_video confirms the confirmed channel owns it. */
+async function archiveLeftovers() {
+  for (const videoId of archiveVideoIds) {
+    const started = Date.now();
+    try {
+      const owned = await call('youtube_get_owned_video', { videoId });
+      if (owned.item?.id !== videoId || owned.item?.channelId !== state.channelId) throw new E2EError(`not owned by ${state.channelId}`, 'ownership_required', 'youtube_get_owned_video');
+      const changed = await archiveVideoQuiet(videoId);
+      log(`archive leftover ${videoId}: ${changed ? 'archived' : 'already archived'}`);
+      if (changed) record('youtube_archive_video', 'PASS', Date.now() - started, `archived leftover ${videoId}`);
+    } catch (error) {
+      cleanupFailures.push(`archive leftover ${videoId}: ${redact(error.message)}`);
+    }
+  }
+}
+
 async function commentsGroup() {
   if (!commentVideoId) {
-    skipTools(GROUPS.comments, 'set YOUTUBE_E2E_COMMENT_VIDEO_ID (an unlisted video owned by the channel that accepts comments) to enable');
+    skipTools(GROUPS.comments, state.lifecycleCommentsDone ? 'covered by the lifecycle group (comments on its public video)' : 'set YOUTUBE_E2E_COMMENT_VIDEO_ID (an unlisted video owned by the channel that accepts comments) to enable');
     return;
   }
   const owned = await call('youtube_get_owned_video', { videoId: commentVideoId });
   log(`comment video ${commentVideoId}: privacyStatus=${owned.item?.privacyStatus} processingStatus=${owned.item?.processingStatus}`);
   if (owned.item?.privacyStatus === 'private') throw new E2EError('comment video is private; comments cannot work', 'video_private', 'youtube_create_comment');
+  await commentsFlow(commentVideoId);
+}
+
+/** create -> channel threads -> reply -> find -> moderation reads/status -> delete reply and comment, on one video. */
+async function commentsFlow(commentVideoId) {
   const text = `youtube-mcp e2e comment ${stamp}`;
   const replyText = `youtube-mcp e2e reply ${stamp}`;
   // A private video rejects comments (the server reports provider_outcome_unknown), so the video must be unlisted or public.
@@ -614,6 +812,13 @@ async function commentsGroup() {
     exec: 'youtube_delete_comment', execArgs: { commentId }, attempts: 3,
   });
   commentDeleted = true;
+  // Verify both are gone (deleted comments can linger briefly in reads).
+  for (const gone of [replyId, commentId]) {
+    await retry(async () => {
+      try { await call('youtube_get_moderation_comment', { commentId: gone }); } catch (error) { if (quotaAborted) throw error; return; }
+      throw new E2EError(`comment ${gone} still readable`, 'verify_failed', 'youtube_get_moderation_comment');
+    }, { attempts: 5 }).catch((error) => record('youtube_delete_comment', 'FAIL', 0, `delete accepted but ${error.message}`));
+  }
 }
 
 async function analyticsGroup() {
@@ -740,6 +945,9 @@ const report = {
   quotaUnitsApprox: quotaUnits,
   quotaByTool: SPENT_BY,
   uploadedVideoId: reuseVideoId ? undefined : state.videoId,
+  lifecycleVideoId: lifecycleInfo.videoId,
+  lifecycleReused: lifecycleInfo.reused,
+  lifecycleSteps,
   reusedVideoId: reuseVideoId,
   groupAborts: Object.fromEntries(groupAborts),
   cleanupFailures,
@@ -753,6 +961,7 @@ process.stdout.write(`${lines.join('\n')}\n\n`);
 process.stdout.write(`Summary: ${Object.entries(counts).map(([status, n]) => `${status}=${n}`).join(' ')} of ${toolNames.length} tools\n`);
 process.stdout.write(`Quota (approx): ${quotaUnits} units\n`);
 if (report.uploadedVideoId) process.stdout.write(`Uploaded (private) video left on channel: ${report.uploadedVideoId}\n`);
+if (lifecycleSteps.length > 0) process.stdout.write(`Lifecycle video ${lifecycleInfo.videoId} (${lifecycleInfo.reused ? 'reused' : 'new'}, left private; delete by hand in YouTube Studio):\n${lifecycleSteps.map((entry) => `  ${entry.step}: ${entry.status}${entry.note ? ` - ${entry.note}` : ''}`).join('\n')}\n`);
 if (cleanupFailures.length > 0) process.stdout.write(`Cleanup failures:\n${cleanupFailures.map((line) => `  ${line}`).join('\n')}\n`);
 
 await mkdir(outDir, { recursive: true });
@@ -763,6 +972,8 @@ const markdown = [
   `- Tools: ${report.toolCount}`, `- Summary: ${Object.entries(counts).map(([status, n]) => `${status}=${n}`).join(', ')}`,
   `- Approx. quota: ${quotaUnits} units`,
   report.uploadedVideoId ? `- Uploaded video (private, delete manually): ${report.uploadedVideoId}` : `- Reused video: ${reuseVideoId ?? 'n/a'}`,
+  report.lifecycleVideoId ? `- Lifecycle video (${lifecycleInfo.reused ? 'reused' : 'new'}; left private, delete by hand in YouTube Studio): ${report.lifecycleVideoId}` : '- Lifecycle video: n/a',
+  ...lifecycleSteps.map((entry) => `  - lifecycle ${entry.step}: ${entry.status}${entry.note ? ` (${entry.note})` : ''}`),
   cleanupFailures.length ? `- Cleanup failures: ${cleanupFailures.join('; ')}` : '- Cleanup failures: none', '',
   '| Tool | Group | Status | ms | Note |', '|---|---|---|---|---|',
   ...rows.map((row) => `| ${row.tool} | ${row.group} | ${row.status} | ${row.ms ?? 0} | ${(row.note ?? '').replace(/\|/g, '\\|')} |`), '',

@@ -64,6 +64,8 @@ import {
   uploadVideoSchema,
   approveCreatorContentSchema,
   deleteCaptionSchema,
+  archiveVideoSchema,
+  preflightArchiveVideoSchema,
   downloadCaptionSchema,
   preflightCaptionDeleteSchema,
   preflightCaptionDownloadSchema,
@@ -121,7 +123,7 @@ export type McpDependencies = {
   >;
   uploads: Pick<UploadService, 'preflight' | 'preflightResume' | 'preflightCancel' | 'approve' | 'upload' | 'resume' | 'getStatus' | 'cancel'>;
   content: Pick<CreatorContentService,
-    'approve' | 'preflightMetadataUpdate' | 'updateMetadata' | 'preflightThumbnail' | 'setThumbnail' |
+    'approve' | 'preflightMetadataUpdate' | 'updateMetadata' | 'preflightArchiveVideo' | 'archiveVideo' | 'preflightThumbnail' | 'setThumbnail' |
     'preflightCaptionUpload' | 'uploadCaption' | 'preflightCaptionUpdate' | 'updateCaption' |
     'preflightCaptionDownload' | 'downloadCaption' | 'preflightCaptionDelete' | 'deleteCaption'
   >;
@@ -177,6 +179,8 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_preflight_update_metadata', writeTool('Read, merge, and preview an owned-video metadata update.', preflightMetadataUpdateSchema), (input) => resultOf(() => dependencies.content.preflightMetadataUpdate(input)));
   server.registerTool('youtube_approve_creator_content', writeTool('Approve an exact creator-content preview before execution.', approveCreatorContentSchema), (input) => resultOf(() => dependencies.content.approve(input)));
   server.registerTool('youtube_update_metadata', writeTool('Write approved merged owned-video metadata. Public, scheduled, and synthetic-media changes need elevated intent.', updateMetadataSchema), (input) => resultOf(() => dependencies.content.updateMetadata(input)));
+  server.registerTool('youtube_preflight_archive_video', writeTool('Preview archiving an owned video: sets it to private and clears any scheduled publish time; title, description and everything else stay untouched. Reversible: make it public or unlisted again with youtube_update_metadata. Refuses with already_archived if it is already private and unscheduled.', preflightArchiveVideoSchema), (input) => resultOf(() => dependencies.content.preflightArchiveVideo(input)));
+  server.registerTool('youtube_archive_video', writeTool('Archive an approved owned video (private, not scheduled; reversible via youtube_update_metadata). Approve the preview with youtube_approve_creator_content, then call with confirm: true.', archiveVideoSchema), (input) => resultOf(() => dependencies.content.archiveVideo(input)));
   server.registerTool('youtube_preflight_set_thumbnail', writeTool('Validate and preview an owned-video thumbnail.', preflightThumbnailSchema), (input) => resultOf(() => dependencies.content.preflightThumbnail(input)));
   server.registerTool('youtube_set_thumbnail', writeTool('Set an approved thumbnail on an owned video.', setThumbnailSchema), (input) => resultOf(() => dependencies.content.setThumbnail(input)));
   server.registerTool('youtube_preflight_caption_upload', writeTool('Validate and preview a caption upload for an owned video.', preflightCaptionUploadSchema), (input) => resultOf(() => dependencies.content.preflightCaptionUpload(input)));

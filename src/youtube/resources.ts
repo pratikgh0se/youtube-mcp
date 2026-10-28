@@ -329,6 +329,7 @@ function normalizeOwnedVideo(value: unknown): OwnedVideo[] {
     ...optionalString('description', snippet?.description),
     ...optionalString('publishedAt', snippet?.publishedAt),
     ...optionalString('privacyStatus', status?.privacyStatus),
+    ...optionalString('publishAt', status?.publishAt),
     ...optionalString('processingStatus', processingDetails?.processingStatus),
     ...optionalString('etag', candidate?.etag),
   }];

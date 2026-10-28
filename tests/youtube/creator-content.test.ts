@@ -475,3 +475,69 @@ describe('CreatorContentService', () => {
     });
   });
 });
+
+describe('CreatorContentService archive', () => {
+  const publicScheduled = { id: 'video-1', channelId: 'channel-a', etag: 'e', snippet: { title: 'Keep me', description: 'Desc', tags: ['t'], categoryId: '22' }, status: { privacyStatus: 'public', publishAt: '2026-12-01T00:00:00.000Z', license: 'youtube' } };
+
+  it('archives to private, clears publishAt, and leaves the snippet untouched', async () => {
+    const { content, provider } = await service({ getVideo: vi.fn(async () => publicScheduled) });
+    const preview = await content.preflightArchiveVideo({ videoId: 'video-1' });
+    expect(preview.kind).toBe('video.archive');
+    expect(preview.desired).toMatchObject({ title: 'Keep me', current: { privacyStatus: 'public', publishAt: '2026-12-01T00:00:00.000Z' }, result: { privacyStatus: 'private', scheduled: false } });
+    await approve(content, preview);
+    await expect(content.archiveVideo({ approvalId: preview.approvalId, videoId: 'video-1', confirm: true }))
+      .resolves.toMatchObject({ state: 'succeeded', videoId: 'video-1', privacyStatus: 'private', scheduled: false });
+    const sent = (provider.updateVideo.mock.calls as unknown as Array<[{ snippet: unknown; status: Record<string, unknown> }]>)[0]![0];
+    expect(sent.snippet).toEqual(publicScheduled.snippet);
+    expect(sent.status).toEqual({ privacyStatus: 'private', license: 'youtube' });
+    expect(sent.status).not.toHaveProperty('publishAt');
+  });
+
+  it('says so instead of planning when the video is already private and unscheduled', async () => {
+    const { content, provider } = await service();
+    await expect(content.preflightArchiveVideo({ videoId: 'video-1' })).rejects.toMatchObject({ code: 'already_archived' });
+    expect(provider.updateVideo).not.toHaveBeenCalled();
+  });
+
+  it('refuses a video owned by another channel', async () => {
+    const { content } = await service({ getVideo: vi.fn(async () => ({ ...publicScheduled, channelId: 'someone-else' })) });
+    await expect(content.preflightArchiveVideo({ videoId: 'video-1' })).rejects.toMatchObject({ code: 'ownership_required' });
+  });
+
+  it('refuses execution without approval and with an approval for a different operation', async () => {
+    const { content, provider } = await service({ getVideo: vi.fn(async () => publicScheduled) });
+    const preview = await content.preflightArchiveVideo({ videoId: 'video-1' });
+    await expect(content.archiveVideo({ approvalId: preview.approvalId, videoId: 'video-1', confirm: true })).rejects.toMatchObject({ code: 'approval_required' });
+    const other = await content.preflightMetadataUpdate({ videoId: 'video-1', title: 'New' });
+    await approve(content, other);
+    await expect(content.archiveVideo({ approvalId: other.approvalId, videoId: 'video-1', confirm: true })).rejects.toMatchObject({ code: 'approval_required' });
+    expect(provider.updateVideo).not.toHaveBeenCalled();
+  });
+
+  it('settles failed and reports provider_error on a clean Google 4xx', async () => {
+    const rejection = Object.assign(new Error('forbidden'), { code: 403, errors: [{ reason: 'forbidden' }] });
+    const { content } = await service({ getVideo: vi.fn(async () => publicScheduled), updateVideo: vi.fn(async () => { throw rejection; }) });
+    const preview = await content.preflightArchiveVideo({ videoId: 'video-1' });
+    await approve(content, preview);
+    await expect(content.archiveVideo({ approvalId: preview.approvalId, videoId: 'video-1', confirm: true }))
+      .rejects.toMatchObject({ code: 'provider_error', status: 403, reason: 'forbidden' });
+  });
+
+  it('returns provider_outcome_unknown with a reconciliation hint on network failure', async () => {
+    const { content } = await service({ getVideo: vi.fn(async () => publicScheduled), updateVideo: vi.fn(async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); }) });
+    const preview = await content.preflightArchiveVideo({ videoId: 'video-1' });
+    await approve(content, preview);
+    await expect(content.archiveVideo({ approvalId: preview.approvalId, videoId: 'video-1', confirm: true }))
+      .rejects.toMatchObject({ code: 'provider_outcome_unknown', reconciliation: { tool: 'youtube_get_owned_video' } });
+  });
+
+  it('refuses when the video changed between preflight and archive', async () => {
+    const getVideo = vi.fn(async () => publicScheduled);
+    const { content, provider } = await service({ getVideo });
+    const preview = await content.preflightArchiveVideo({ videoId: 'video-1' });
+    await approve(content, preview);
+    getVideo.mockImplementation(async () => ({ ...publicScheduled, status: { ...publicScheduled.status, privacyStatus: 'unlisted' }, snippet: { ...publicScheduled.snippet, title: 'Edited meanwhile' } }));
+    await expect(content.archiveVideo({ approvalId: preview.approvalId, videoId: 'video-1', confirm: true })).rejects.toMatchObject({ code: 'approval_required' });
+    expect(provider.updateVideo).not.toHaveBeenCalled();
+  });
+});
