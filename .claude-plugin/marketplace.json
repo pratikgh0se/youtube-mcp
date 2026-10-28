@@ -9,7 +9,7 @@
     {
       "name": "youtube-mcp",
       "source": "./",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "Search YouTube, manage your channel and read your analytics. Every change to your account is previewed and needs your approval first.",
       "homepage": "https://github.com/pratikgh0se/youtube-mcp",
       "license": "MIT"

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.3.0 (unreleased)
+
+- Faster first start: launch from the release tarball
+
 ### Fixed
 - harden release safety and verification
 - preserve exact, persisted Phase 2 approval bindings across MCP restarts

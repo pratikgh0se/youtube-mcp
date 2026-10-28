@@ -6,8 +6,9 @@ import { describe, expect, it } from 'vitest';
 // ---------------------------------------------------------------------------
 // Canonical launch: change here (e.g. to pin a tag) and every check follows.
 // ---------------------------------------------------------------------------
-const CANONICAL_LAUNCH: readonly string[] = ['npx', '-y', 'github:pratikgh0se/youtube-mcp#v0.2.0', '--transport', 'stdio'];
-const NPX_TARGET = 'github:pratikgh0se/youtube-mcp#v0.2.0';
+const PKG_VERSION = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
+const NPX_TARGET = `https://github.com/pratikgh0se/youtube-mcp/releases/download/v${PKG_VERSION}/youtube-mcp-${PKG_VERSION}.tgz`;
+const CANONICAL_LAUNCH: readonly string[] = ['npx', '-y', NPX_TARGET, '--transport', 'stdio'];
 const SERVER_NAME = 'youtube-mcp';
 const BIN_PATH = './bin/youtube-mcp.mjs';
 const ENV_NAMES = [
@@ -444,8 +445,23 @@ describe('C4 versions and names', () => {
     expect(readJson('mcpb/manifest.json').version, 'mcpb/manifest.json version').toBe(version);
   });
 
-  it('the npx pin ref equals v + package.json version', () => {
-    expect(NPX_TARGET.split('#')[1]).toBe(`v${readJson('package.json').version as string}`);
+  it('the npx release-tarball URL carries v + package.json version in tag and filename', () => {
+    const version = readJson('package.json').version as string;
+    const m = /^https:\/\/github\.com\/pratikgh0se\/youtube-mcp\/releases\/download\/v([^/]+)\/youtube-mcp-([^/]+)\.tgz$/.exec(NPX_TARGET);
+    expect(m, `NPX_TARGET ${NPX_TARGET} must match the release tarball URL pattern`).not.toBeNull();
+    expect(m?.[1], 'tag version in URL').toBe(version);
+    expect(m?.[2], 'filename version in URL').toBe(version);
+  });
+
+  it('package.json "files" covers the bin and dist directories', () => {
+    const files = readJson('package.json').files as string[];
+    expect(Array.isArray(files), 'package.json files must be an array').toBe(true);
+    for (const dir of ['bin', 'dist']) {
+      expect(
+        files.some((f) => f.replace(/^\.\//, '').replace(/\/$/, '') === dir),
+        `package.json files must include "${dir}"`,
+      ).toBe(true);
+    }
   });
 
   it('all names are youtube-mcp and marketplace source is "./"', () => {
@@ -548,9 +564,9 @@ describe('C5 install links', () => {
     expect(text, 'README.md').toContain('gemini extensions install https://github.com/pratikgh0se/youtube-mcp');
   });
 
-  it.each(['README.md', 'AGENTS.md', 'llms-install.md'])('%s npx invocations use the github: package', (file) => {
+  it.each(['README.md', 'AGENTS.md', 'llms-install.md'])('%s npx invocations use the release tarball URL', (file) => {
     if (!existsSync(file)) return;
-    const hits = readText(file).match(/\bnpx\s[^\n"'`]*?youtube-mcp(?:#[^\s"'`]*)?/g) ?? [];
+    const hits = readText(file).match(/\bnpx\s[^\n"'`]*?youtube-mcp(?:[^\s"'`]*\.tgz)?/g) ?? [];
     for (const hit of hits) expect(hit, `${file}: npx invocation "${hit}"`).toContain(NPX_TARGET);
   });
 

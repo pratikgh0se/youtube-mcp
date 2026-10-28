@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -6,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 import { createMcpServer, type McpDependencies } from '../../src/mcp/server.js';
 
-const LAUNCH_PREFIX = ['npx', '-y', 'github:pratikgh0se/youtube-mcp#v0.2.0'];
+const PKG_VERSION = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
+const TARBALL = `https://github.com/pratikgh0se/youtube-mcp/releases/download/v${PKG_VERSION}/youtube-mcp-${PKG_VERSION}.tgz`;
+const LAUNCH_PREFIX = ['npx', '-y', TARBALL];
 const MANIFESTS = [
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
@@ -43,7 +46,7 @@ describe('install manifests', () => {
     for (const entry of marketplace.plugins) expect(entry.version).toBe(version);
   });
 
-  it('every launch command is npx -y github:pratikgh0se/youtube-mcp#v0.2.0 over stdio', async () => {
+  it('every launch command is npx -y <release tarball URL> over stdio', async () => {
     const claude = (await load('.mcp.json')) as { mcpServers: Record<string, Server> };
     const gemini = (await load('gemini-extension.json')) as { mcpServers: Record<string, Server> };
 
@@ -51,7 +54,7 @@ describe('install manifests', () => {
       expect(Object.keys(servers)).toEqual(['youtube-mcp']);
       for (const server of Object.values(servers)) {
         expect(launchCommand(server)).toEqual(LAUNCH_PREFIX);
-        expect(server.args).toEqual(['-y', 'github:pratikgh0se/youtube-mcp#v0.2.0', '--transport', 'stdio']);
+        expect(server.args).toEqual(['-y', TARBALL, '--transport', 'stdio']);
       }
     }
   });
