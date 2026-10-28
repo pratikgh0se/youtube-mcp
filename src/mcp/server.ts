@@ -29,6 +29,8 @@ import type { UploadService } from '../youtube/uploads.js';
 import type { CreatorContentService } from '../youtube/creator-content.js';
 import type { PlaylistService } from '../youtube/playlists.js';
 import type { ModerationService } from '../youtube/moderation.js';
+import type { ChannelProfileService } from '../youtube/channel-profile.js';
+import type { SubscriptionCurationService } from '../youtube/subscriptions.js';
 import {
   channelSchema,
   commentsSchema,
@@ -38,6 +40,14 @@ import {
   creatorOverviewSchema,
   creatorRetentionSchema,
   creatorTopVideosSchema,
+  creatorReportSchema,
+  trendingSchema,
+  listChannelVideosSchema,
+  listSubscriptionsSchema,
+  preflightUpdateChannelSchema,
+  updateChannelSchema,
+  preflightUnsubscribeManySchema,
+  unsubscribeManySchema,
   captionTracksSchema,
   emptySchema,
   importTakeoutSchema,
@@ -100,7 +110,7 @@ import {
   resetConsumptionDataSchema,
 } from './schemas.js';
 
-type AccountTools = Pick<AccountService, 'myAccount' | 'listSubscriptions' | 'listChannelCommentThreads'> & {
+type AccountTools = Pick<AccountService, 'myAccount' | 'listSubscriptions' | 'listSubscriptionsPage' | 'listChannelCommentThreads'> & {
   subscribe(input: SubscribeInput): Promise<SubscriptionResult>;
   unsubscribe(input: UnsubscribeInput): Promise<UnsubscribeResult>;
   rateVideo(input: RateVideoInput): Promise<VideoRatingResult>;
@@ -109,9 +119,9 @@ type AccountTools = Pick<AccountService, 'myAccount' | 'listSubscriptions' | 'li
 
 export type McpDependencies = {
   auth: { status(): Promise<AuthStatus> };
-  public: Pick<PublicService, 'search' | 'getVideo' | 'getChannel' | 'getComments' | 'getTranscript'>;
+  public: Pick<PublicService, 'search' | 'trending' | 'listChannelVideos' | 'getVideo' | 'getChannel' | 'getComments' | 'getTranscript'>;
   account: AccountTools;
-  creator: Pick<CreatorAnalyticsService, 'overview' | 'topVideos' | 'retention'>;
+  creator: Pick<CreatorAnalyticsService, 'overview' | 'topVideos' | 'retention' | 'report'>;
   importer: Pick<TakeoutImporter, 'import'>;
   insights: Pick<ConsumptionInsights, 'profile' | 'trends'>;
   resources: Pick<ResourceService,
@@ -126,6 +136,8 @@ export type McpDependencies = {
   >;
   playlists: Pick<PlaylistService, 'preflightCreate' | 'create' | 'preflightUpdate' | 'update' | 'preflightDelete' | 'delete' | 'preflightAdd' | 'add' | 'preflightRemove' | 'remove' | 'preflightReorder' | 'reorder'>;
   moderation: Pick<ModerationService, 'preflightReply' | 'reply' | 'preflightSetStatus' | 'setStatus' | 'preflightDelete' | 'delete'>;
+  channelProfile: Pick<ChannelProfileService, 'preflightUpdate' | 'update'>;
+  subscriptions: Pick<SubscriptionCurationService, 'preflightUnsubscribeMany' | 'unsubscribeMany'>;
   approvals: { approve(input: { approvalId: string; confirm?: boolean }): Promise<OperationPreview> };
   curation: Pick<ProfileCurationService, 'savePolicy' | 'saveCandidate' | 'propose' | 'reset'>;
 };
@@ -136,14 +148,16 @@ const { version: SERVER_VERSION } = createRequire(import.meta.url)('../../packag
 export function createMcpServer(dependencies: McpDependencies): McpServer {
   const server = new McpServer({ name: 'youtube-mcp', version: SERVER_VERSION });
 
-  server.registerTool('youtube_search', readTool('Search public YouTube videos.', searchSchema), (input) => resultOf(() => dependencies.public.search(input)));
+  server.registerTool('youtube_search', readTool('Search public YouTube videos (100 quota units per call). Optional filters: order, publishedAfter/publishedBefore (RFC 3339), videoDuration, channelId, regionCode, relevanceLanguage, safeSearch, pageToken.', searchSchema), (input) => resultOf(() => dependencies.public.search(input)));
+  server.registerTool('youtube_trending', readTool('List the most popular videos for a region (default US), optionally in one video category. 1 quota unit.', trendingSchema), (input) => resultOf(() => dependencies.public.trending(input)));
+  server.registerTool('youtube_list_channel_videos', readTool('List recent uploads with statistics for ANY public channel, by channel ID or @handle (about 3 quota units per page).', listChannelVideosSchema), (input) => resultOf(() => dependencies.public.listChannelVideos(input)));
   server.registerTool('youtube_get_video', readTool('Get a public YouTube video by ID.', videoSchema), (input) => resultOf(() => dependencies.public.getVideo(input)));
   server.registerTool('youtube_get_channel', readTool('Get a public YouTube channel by ID.', channelSchema), (input) => resultOf(() => dependencies.public.getChannel(input)));
   server.registerTool('youtube_get_comments', readTool('List public comment threads for a specific video.', commentsSchema), (input) => resultOf(() => dependencies.public.getComments(input)));
   server.registerTool('youtube_get_transcript', readTool('Get a best-effort public transcript for a video.', videoSchema), (input) => resultOf(() => dependencies.public.getTranscript(input)));
 
   server.registerTool('youtube_my_account', readTool('Get the authenticated YouTube channel.', emptySchema), () => resultOf(() => dependencies.account.myAccount()));
-  server.registerTool('youtube_list_subscriptions', readTool('List subscriptions for the authenticated account.', listSchema), (input) => resultOf(() => dependencies.account.listSubscriptions(input.maxResults)));
+  server.registerTool('youtube_list_subscriptions', readTool('List subscriptions for the authenticated account, with pagination. details: true adds subscriberCount, videoCount and lastUploadAt per channel and costs about 1 extra quota unit per returned channel.', listSubscriptionsSchema), (input) => resultOf(() => dependencies.account.listSubscriptionsPage(input)));
   server.registerTool('youtube_list_channel_comment_threads', readTool('List comment threads associated with the authenticated channel; authors may be anyone.', listSchema), (input) => resultOf(() => dependencies.account.listChannelCommentThreads(input.maxResults)));
   server.registerTool('youtube_subscribe', writeTool('Subscribe the authenticated account to a channel.', subscribeSchema), (input) => resultOf(() => dependencies.account.subscribe(input)));
   server.registerTool('youtube_unsubscribe', writeTool('Remove an authenticated-account subscription.', unsubscribeSchema), (input) => resultOf(() => dependencies.account.unsubscribe(input)));
@@ -153,6 +167,8 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_creator_overview', readTool('Get owned-channel creator analytics for a date range.', creatorOverviewSchema), (input) => resultOf(() => dependencies.creator.overview(input)));
   server.registerTool('youtube_creator_top_videos', readTool('Get top owned-channel videos for a date range.', creatorTopVideosSchema), (input) => resultOf(() => dependencies.creator.topVideos(input, input.limit)));
   server.registerTool('youtube_creator_retention', readTool('Get audience-retention data for an owned video.', creatorRetentionSchema), (input) => resultOf(() => dependencies.creator.retention(input.videoId)));
+
+  server.registerTool('youtube_creator_report', readTool('Run an allowlisted YouTube Analytics report for the owned channel (default: last 28 days). Metrics: views, estimatedMinutesWatched, averageViewDuration, averageViewPercentage, subscribersGained, subscribersLost, likes, comments, shares (viewerPercentage only with ageGroup/gender). Dimensions: day, month, video, country, deviceType, operatingSystem, insightTrafficSourceType, insightTrafficSourceDetail (needs one video plus an insightTrafficSourceType filter), ageGroup, gender, subscribedStatus, sharingService (shares only). Invalid combinations are rejected with invalid_input before any API call. Rows come back as objects keyed by column name.', creatorReportSchema), (input) => resultOf(() => dependencies.creator.report(input)));
 
   server.registerTool('youtube_list_owned_videos', readTool('List videos owned by the selected creator profile.', pageSchema), (input) => resultOf(() => dependencies.resources.listOwnedVideos(input)));
   server.registerTool('youtube_get_owned_video', readTool('Get a video owned by the selected creator profile.', ownedVideoSchema), (input) => resultOf(() => dependencies.resources.getOwnedVideo(input.videoId)));
@@ -165,7 +181,7 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_find_comment_reply', readTool('Exhaustively find an exact selected-channel reply under one immutable parent comment.', findCommentReplySchema), (input) => resultOf(() => dependencies.resources.findCommentReply(input)));
   server.registerTool('youtube_list_caption_tracks', readTool('List caption tracks for an owned creator video.', captionTracksSchema), (input) => resultOf(() => dependencies.resources.listCaptionTracks(input)));
 
-  server.registerTool('youtube_approve', writeTool('Approve ANY pending preflight preview (upload, metadata, archive, thumbnail, caption, playlist, comment reply/moderation/delete) by approvalId, with confirm: true. The result echoes the operation kind, target and exact desired change so the human can see precisely what is approved. Approval is single-use, expires, and is bound to the active profile and channel; then call the matching execute tool with confirm: true.', approveSchema), (input) => resultOf(() => dependencies.approvals.approve(input)));
+  server.registerTool('youtube_approve', writeTool('Approve ANY pending preflight preview (upload, metadata, archive, thumbnail, caption, playlist, comment reply/moderation/delete, channel profile edit, bulk unsubscribe) by approvalId, with confirm: true. The result echoes the operation kind, target and exact desired change so the human can see precisely what is approved. Approval is single-use, expires, and is bound to the active profile and channel; then call the matching execute tool with confirm: true.', approveSchema), (input) => resultOf(() => dependencies.approvals.approve(input)));
   server.registerTool('youtube_preflight_upload', writeTool('Validate and preview a private resumable video upload.', preflightUploadSchema), (input) => resultOf(() => dependencies.uploads.preflight(input)));
   server.registerTool('youtube_upload_video', writeTool('Start an approved resumable video upload. Public visibility also needs publish: true.', uploadVideoSchema), (input) => resultOf(() => dependencies.uploads.upload(input)));
   server.registerTool('youtube_preflight_resume_upload', writeTool('Validate and preview an explicit resumable-upload continuation.', preflightResumeUploadSchema), (input) => resultOf(() => dependencies.uploads.preflightResume(input)));
@@ -207,6 +223,11 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_set_comment_moderation_status', writeTool('Set an approved comment moderation status; banAuthor requires elevated intent.', setCommentModerationStatusSchema), (input) => resultOf(() => dependencies.moderation.setStatus(input)));
   server.registerTool('youtube_preflight_delete_comment', writeTool('Read and preview deletion of an immutable creator-channel comment.', preflightDeleteCommentSchema), (input) => resultOf(() => dependencies.moderation.preflightDelete(input)));
   server.registerTool('youtube_delete_comment', writeTool('Delete an approved immutable creator-channel comment.', deleteCommentSchema), (input) => resultOf(() => dependencies.moderation.delete(input)));
+
+  server.registerTool('youtube_preflight_update_channel', writeTool('Preview an edit to the selected creator channel profile (description, keywords, country, defaultLanguage), showing current vs desired. Other branding settings are preserved on execute.', preflightUpdateChannelSchema), (input) => resultOf(() => dependencies.channelProfile.preflightUpdate(input)));
+  server.registerTool('youtube_update_channel', writeTool('Apply an approved channel profile edit (read-modify-write of brandingSettings so untouched fields are kept). Approve with youtube_approve, then call with confirm: true and the same fields.', updateChannelSchema), (input) => resultOf(() => dependencies.channelProfile.update(input)));
+  server.registerTool('youtube_preflight_unsubscribe_many', writeTool('Preview removing up to 100 subscriptions of the authenticated account: verifies each belongs to the account and lists every channel title to be removed, with approximate quota (50 units per removal).', preflightUnsubscribeManySchema), (input) => resultOf(() => dependencies.subscriptions.preflightUnsubscribeMany(input)));
+  server.registerTool('youtube_unsubscribe_many', writeTool('Remove the approved subscriptions one by one and report each as removed, already_gone or failed. Stops early (with a partial report) if YouTube quota runs out. Approve with youtube_approve first, then call with confirm: true.', unsubscribeManySchema), (input) => resultOf(() => dependencies.subscriptions.unsubscribeMany(input)));
 
   server.registerTool('youtube_import_takeout', {
     description: 'Import a local Google Takeout YouTube-history JSON or HTML file into local derived analytics.',

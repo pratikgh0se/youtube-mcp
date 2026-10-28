@@ -6,7 +6,7 @@
 ![Node.js >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 ![MCP server](https://img.shields.io/badge/MCP-server-blue.svg)
 
-YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 72 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
+YouTube MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server written in TypeScript. It exposes 79 tools to MCP clients such as Claude Code, Claude Desktop, Cursor and Codex. It runs on your own machine over stdio, keeps its OAuth tokens and working data on your disk, and never starts a network listener unless you ask for one.
 
 Anything that changes your YouTube account goes through a **preflight, approve, execute** flow. The assistant first shows you exactly what it is about to do, and nothing happens until the exact previewed change is approved.
 
@@ -20,13 +20,13 @@ Anything that changes your YouTube account goes through a **preflight, approve, 
 ## What it can do
 
 **Read (no account needed, just an API key)**
-- Search videos, look up videos and channels.
+- Search videos (with order, date, duration, channel, region and safe-search filters), see what is trending, list the recent uploads of any channel, look up videos and channels.
 - List the public comments on a video.
 - Fetch a public transcript (best effort; some videos have none).
 
 **Read (your own account and channel, via OAuth)**
 - Your channel, your subscriptions, and comment threads on your channel.
-- Creator analytics: channel overview, top videos and audience retention for a date range.
+- Creator analytics: channel overview, top videos and audience retention for a date range, plus a flexible report (views by day, traffic sources, devices, countries, demographics and more).
 - Your uploaded videos, playlists and playlist items, caption tracks, and the comment moderation queue.
 
 **Write (your own account, every change needs approval)**
@@ -35,6 +35,8 @@ Anything that changes your YouTube account goes through a **preflight, approve, 
 - Captions: upload, update, download and delete caption tracks.
 - Playlists: create, update, delete, and add, remove or reorder items. New playlists default to private.
 - Comments and moderation: reply to comments, set a moderation status (including banning an author), and delete comments on your channel.
+- Channel profile: edit your channel description, keywords, country and default language.
+- Subscription curation: review subscriptions with subscriber counts and last upload date, then remove many at once after one approval.
 - Account actions: subscribe, unsubscribe, rate a video, post a top-level comment (these need a literal `confirm: true`).
 
 **Private viewing analysis (local only)**
@@ -308,13 +310,14 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 
 ## Tools
 
-72 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
+79 tools, grouped by area. Tools marked "preflight and approve" need the three-step flow above.
 
 | Area | Tools |
 | --- | --- |
-| Public reads (5) | `youtube_search`, `youtube_get_video`, `youtube_get_channel`, `youtube_get_comments`, `youtube_get_transcript` |
-| Your account (7) | Read: `youtube_my_account`, `youtube_list_subscriptions`, `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` (only on videos your channel owns; other videos are refused with `ownership_required`) |
-| Creator analytics (3) | `youtube_creator_overview`, `youtube_creator_top_videos`, `youtube_creator_retention` |
+| Public reads (7) | `youtube_search` (filters: `order`, `publishedAfter`/`publishedBefore`, `videoDuration`, `channelId`, `regionCode`, `relevanceLanguage`, `safeSearch`, `pageToken`; 100 quota units), `youtube_trending` (most popular videos by region and category, 1 unit), `youtube_list_channel_videos` (recent uploads with statistics for any channel ID or @handle, about 3 units per page), `youtube_get_video`, `youtube_get_channel`, `youtube_get_comments`, `youtube_get_transcript` |
+| Your account (9) | Read: `youtube_my_account`, `youtube_list_subscriptions` (paginated; `details: true` adds `subscriberCount`, `videoCount` and `lastUploadAt`, costing about 1 extra quota unit per returned channel), `youtube_list_channel_comment_threads`. Write (`confirm: true`): `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`, `youtube_create_comment` (only on videos your channel owns; other videos are refused with `ownership_required`). Bulk unsubscribe (preflight and approve): `youtube_preflight_unsubscribe_many`, `youtube_unsubscribe_many` (up to 100 subscriptions, 50 quota units each, per-item results, stops early on quota exhaustion) |
+| Creator analytics (4) | `youtube_creator_overview`, `youtube_creator_top_videos`, `youtube_creator_retention`, `youtube_creator_report` (allowlisted YouTube Analytics report: choose metrics, dimensions, filters, sort; invalid combinations are rejected up front) |
+| Channel profile (2) | `youtube_preflight_update_channel`, `youtube_update_channel`: edit your channel's description, keywords, country and default language (preflight and approve; other branding settings are preserved) |
 | Creator reads (10) | `youtube_list_owned_videos`, `youtube_get_owned_video`, `youtube_list_video_categories`, `youtube_list_playlists`, `youtube_get_playlist`, `youtube_list_playlist_items`, `youtube_list_caption_tracks`, `youtube_list_moderation_comments`, `youtube_get_moderation_comment`, `youtube_find_comment_reply` |
 | Uploads (7) | `youtube_preflight_upload`, `youtube_upload_video`, `youtube_get_upload_status`, `youtube_preflight_resume_upload`, `youtube_resume_upload`, `youtube_preflight_cancel_upload`, `youtube_cancel_upload` |
 | Video metadata, archive and thumbnails (6) | `youtube_preflight_update_metadata`, `youtube_update_metadata`, `youtube_preflight_archive_video`, `youtube_archive_video`, `youtube_preflight_set_thumbnail`, `youtube_set_thumbnail` |

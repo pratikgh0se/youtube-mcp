@@ -8,11 +8,40 @@ const dateRange = {
   endDate: date,
 };
 
-export const searchSchema = z.object({ query: z.string().min(1), maxResults });
+const rfc3339 = z.string().datetime({ offset: true, message: 'Use an RFC 3339 timestamp such as 2026-01-31T00:00:00Z.' });
+export const searchSchema = z.object({
+  query: z.string().min(1),
+  maxResults,
+  order: z.enum(['relevance', 'date', 'viewCount', 'rating', 'title']).optional(),
+  publishedAfter: rfc3339.optional(),
+  publishedBefore: rfc3339.optional(),
+  videoDuration: z.enum(['any', 'short', 'medium', 'long']).optional(),
+  channelId: z.string().min(1).optional(),
+  regionCode: z.string().regex(/^[A-Za-z]{2}$/, 'Use a two-letter region code.').optional(),
+  relevanceLanguage: z.string().regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/, 'Use an ISO 639-1 language code such as en or zh-Hans.').optional(),
+  safeSearch: z.enum(['none', 'moderate', 'strict']).optional(),
+  pageToken: z.string().min(1).optional(),
+});
+export const trendingSchema = z.object({
+  regionCode: z.string().regex(/^[A-Za-z]{2}$/, 'Use a two-letter region code.').optional(),
+  videoCategoryId: z.string().regex(/^\d+$/, 'Use a numeric video category ID (see youtube_list_video_categories).').optional(),
+  maxResults,
+  pageToken: z.string().min(1).optional(),
+});
+export const listChannelVideosSchema = z.object({
+  channelId: z.string().min(1).describe('A channel ID (UC...) or an @handle.'),
+  maxResults,
+  pageToken: z.string().min(1).optional(),
+});
 export const videoSchema = z.object({ videoId: id });
 export const channelSchema = z.object({ channelId: id });
 export const commentsSchema = z.object({ videoId: id, maxResults });
 export const listSchema = z.object({ maxResults });
+export const listSubscriptionsSchema = z.object({
+  maxResults,
+  pageToken: z.string().min(1).optional(),
+  details: z.boolean().optional().describe('Add subscriberCount, videoCount and lastUploadAt per channel. Costs roughly 1 extra quota unit per returned channel plus 1 per 50 channels.'),
+});
 export const emptySchema = z.object({});
 export const pageSchema = z.object({ maxResults, pageToken: id.optional() });
 export const videoCategoriesSchema = z.object({
@@ -116,6 +145,19 @@ export const createCommentSchema = z.object({ videoId: id, text: z.string().min(
 export const creatorOverviewSchema = z.object(dateRange);
 export const creatorTopVideosSchema = z.object({ ...dateRange, limit: maxResults });
 export const creatorRetentionSchema = z.object({ videoId: id });
+export const creatorReportSchema = z.object({
+  startDate: date.optional(),
+  endDate: date.optional(),
+  metrics: z.array(z.string().min(1)).min(1).max(12),
+  dimensions: z.array(z.string().min(1)).max(3).optional(),
+  filters: z.object({
+    videoIds: z.array(id).min(1).max(500).optional(),
+    country: z.string().regex(/^[A-Za-z]{2}$/, 'Use a two-letter country code.').optional(),
+    insightTrafficSourceType: z.string().min(1).optional(),
+  }).optional(),
+  sort: z.array(z.string().min(1)).max(4).optional(),
+  maxResults: z.number().int().min(1).max(200).optional(),
+});
 
 export const importTakeoutSchema = z.object({ inputPath: z.string().min(1) });
 export const consumptionProfileSchema = z.object(dateRange);
@@ -141,3 +183,20 @@ export const curationCandidateSchema = z.object({
 });
 export const proposeConsumptionQueueSchema = z.object({ minutes: z.number().positive().max(24 * 60) });
 export const resetConsumptionDataSchema = z.object({ confirm: z.boolean().optional() });
+
+export const preflightUpdateChannelSchema = z.object({
+  description: z.string().max(1_000).optional(),
+  keywords: z.string().max(500).optional(),
+  country: z.string().regex(/^[A-Za-z]{2}$/, 'Use a two-letter ISO 3166-1 country code.').optional(),
+  defaultLanguage: z.string().min(2).max(16).optional(),
+}).refine((input) => Object.values(input).some((value) => value !== undefined), 'Provide at least one channel field to update.');
+export const updateChannelSchema = z.object({
+  description: z.string().max(1_000).optional(),
+  keywords: z.string().max(500).optional(),
+  country: z.string().regex(/^[A-Za-z]{2}$/, 'Use a two-letter ISO 3166-1 country code.').optional(),
+  defaultLanguage: z.string().min(2).max(16).optional(),
+  approvalId: id,
+  confirm: z.boolean().optional(),
+});
+export const preflightUnsubscribeManySchema = z.object({ subscriptionIds: z.array(id).min(1).max(100) });
+export const unsubscribeManySchema = preflightUnsubscribeManySchema.extend({ approvalId: id, confirm: z.boolean().optional() });

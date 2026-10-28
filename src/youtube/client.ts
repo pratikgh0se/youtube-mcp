@@ -5,9 +5,16 @@ import { AppError } from '../errors.js';
 import type { AppConfig } from '../types.js';
 
 type ListResponse = { data: { items?: unknown[]; nextPageToken?: string | null } };
-export type SearchListRequest = { part: string; fields?: string; q?: string; maxResults?: number; type?: string };
-export type VideosListRequest = { part: string; fields?: string; id?: string; mine?: boolean; maxResults?: number; pageToken?: string };
-export type ChannelsListRequest = { part: string; fields?: string; id?: string; mine?: boolean; maxResults?: number };
+export type SearchListRequest = {
+  part: string; fields?: string; q?: string; maxResults?: number; type?: string;
+  order?: string; publishedAfter?: string; publishedBefore?: string; videoDuration?: string; channelId?: string;
+  regionCode?: string; relevanceLanguage?: string; safeSearch?: string; pageToken?: string;
+};
+export type VideosListRequest = {
+  part: string; fields?: string; id?: string; mine?: boolean; maxResults?: number; pageToken?: string;
+  chart?: string; regionCode?: string; videoCategoryId?: string;
+};
+export type ChannelsListRequest = { part: string; fields?: string; id?: string; forHandle?: string; mine?: boolean; maxResults?: number };
 export type CommentThreadsListRequest = {
   part: string;
   fields?: string;
@@ -18,7 +25,7 @@ export type CommentThreadsListRequest = {
   moderationStatus?: string;
   textFormat?: string;
 };
-export type SubscriptionsListRequest = { part: string; mine: boolean; maxResults?: number };
+export type SubscriptionsListRequest = { part: string; mine?: boolean; id?: string; maxResults?: number; pageToken?: string };
 
 export type ResumableUploadApi = {
   initialize(request: {
@@ -41,7 +48,7 @@ export type YouTubeDataApi = {
     rate?(request: Record<string, unknown>): Promise<{ data: unknown }>;
     update?(request: Record<string, unknown>): Promise<{ data: unknown }>;
   };
-  channels: { list(request: ChannelsListRequest): Promise<ListResponse> };
+  channels: { list(request: ChannelsListRequest): Promise<ListResponse>; update?(request: Record<string, unknown>): Promise<{ data: unknown }> };
   commentThreads: {
     list(request: CommentThreadsListRequest): Promise<ListResponse>;
     insert?(request: Record<string, unknown>): Promise<{ data: unknown }>;
@@ -76,7 +83,7 @@ export type YouTubeDataApi = {
   subscriptions?: {
     delete(request: Record<string, unknown>): Promise<{ data: unknown }>;
     insert(request: Record<string, unknown>): Promise<{ data: unknown }>;
-    list(request: SubscriptionsListRequest): Promise<{ data: { items?: unknown[] } }>;
+    list(request: SubscriptionsListRequest): Promise<{ data: { items?: unknown[]; nextPageToken?: string | null } }>;
   };
 };
 
