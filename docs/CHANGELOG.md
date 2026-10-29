@@ -44,6 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - `youtube_preflight_update_channel` always failed with an incomplete-channel-result error because the real client adapter lacked `channels.update`
 - account mutations (`youtube_create_comment`, `youtube_subscribe`, `youtube_unsubscribe`, `youtube_rate_video`) reported `provider_outcome_unknown` for every error; clean 4xx rejections now surface their status and reason, and only network, 5xx and ambiguous failures stay unknown. A comment with an empty `textDisplay` after insert falls back to `textOriginal`.
+- `youtube_create_comment` reported `provider_outcome_unknown` although the comment was posted: YouTube's insert response carries no `authorDisplayName`, which the response check required. The comment id is now the only required field (author and text fall back).
+- live e2e channel group verifies the stored brandingSettings description (via an unapproved preview) instead of `youtube_my_account`, whose snippet description lags the write
 - scheduled publish: a 400 `invalidPublishAt` now explains that YouTube only schedules a private video that has never been public; tool descriptions say so, and the live e2e schedules before first publishing
 - caption and thumbnail uploads now send the media body correctly
 - provider errors now include the HTTP status and reason

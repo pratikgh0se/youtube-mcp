@@ -86,7 +86,8 @@ export class AccountService {
             },
           },
         });
-        const comment = normalizeComment(response.data)[0];
+        // comments.insert omits authorDisplayName for the authenticated author; the id is the only must-have.
+        const comment = normalizeComment(response.data, { author: 'You', text: input.text })[0];
         if (!comment) {
           throw invalidProviderResponse('comment');
         }
@@ -164,7 +165,7 @@ export class AccountService {
         maxResults,
         textFormat: 'plainText',
       });
-      return (comments.data.items ?? []).flatMap(normalizeComment);
+      return (comments.data.items ?? []).flatMap((item) => normalizeComment(item));
     } catch (error) {
       throw toSafeError(error);
     }
@@ -274,14 +275,14 @@ function normalizeChannelId(value: unknown): string[] {
   return id ? [id] : [];
 }
 
-function normalizeComment(value: unknown): CommentSummary[] {
+function normalizeComment(value: unknown, fallback: { author: string; text: string } | undefined = undefined): CommentSummary[] {
   const candidate = asRecord(value);
   const threadSnippet = asRecord(candidate?.snippet);
   const topLevelComment = asRecord(threadSnippet?.topLevelComment);
   const snippet = asRecord(topLevelComment?.snippet);
   const id = stringValue(candidate?.id);
-  const author = stringValue(snippet?.authorDisplayName);
-  const text = stringValue(snippet?.textDisplay) ?? stringValue(snippet?.textOriginal);
+  const author = stringValue(snippet?.authorDisplayName) ?? fallback?.author;
+  const text = stringValue(snippet?.textDisplay) ?? stringValue(snippet?.textOriginal) ?? fallback?.text;
   if (!id || !author || !text) {
     return [];
   }

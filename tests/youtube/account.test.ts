@@ -132,6 +132,23 @@ describe('AccountService', () => {
     });
   });
 
+  it('accepts the real comments.insert shape that has no authorDisplayName', async () => {
+    const provider = accountApi();
+    provider.commentThreads.insert = async () => ({
+      data: {
+        id: 'Ugw-thread',
+        snippet: { videoId: 'video-1', topLevelComment: { id: 'Ugw-thread', snippet: { textDisplay: 'Thanks!', textOriginal: 'Thanks!', viewerRating: 'none', likeCount: 0 } } },
+      },
+    });
+    const account = new AccountService(
+      { getAccessToken: async () => 'access-token' },
+      new YouTubeClient(config(), { createAuthorizedApi: () => provider, createPublicApi: () => accountApi() }),
+      ownedVideos(),
+    );
+
+    await expect(account.createComment({ videoId: 'video-1', text: 'Thanks!', confirm: true })).resolves.toMatchObject({ id: 'Ugw-thread', text: 'Thanks!' });
+  });
+
   it('refuses to create a comment on a video the selected channel does not own, before any write', async () => {
     const account = new AccountService(
       { getAccessToken: async () => 'access-token' },

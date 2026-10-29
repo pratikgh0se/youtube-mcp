@@ -891,7 +891,9 @@ async function analyticsGroup() {
 /** Round trip on the dedicated test channel: description "<original> [e2e <ts>]", then the exact original again. */
 async function channelGroup() {
   const field = (preview) => preview.desired?.current?.description ?? '';
-  const readDescription = async () => ((await call('youtube_my_account')).description ?? '');
+  // The write goes to brandingSettings.channel.description; my_account reads snippet.description, which YouTube syncs with a lag.
+  // So verify via an unapproved (never executed) preview whose "current" snapshot is the stored brandingSettings description.
+  const readDescription = () => storedDescription();
   const suffix = ` [e2e ${stamp}]`;
   // Unapproved probe: the preview's "current" snapshot is the exact stored description (my_account may trim).
   const probe = await step('youtube_preflight_update_channel', { description: `${PREFIX}probe ${stamp}` }, { check: (v) => (v.approvalId && v.kind === 'channel.update' && v.desired?.current ? undefined : 'malformed preview') });
@@ -915,11 +917,20 @@ async function channelGroup() {
     const now = await readDescription();
     if (now !== original) throw new E2EError('original description not restored exactly', 'verify_failed', 'youtube_update_channel');
   }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `restore not verified: ${error.message}`));
+  // Informational only: my_account (snippet.description) lags behind brandingSettings and is not part of pass/fail.
+  const lagged = ((await call('youtube_my_account').catch(() => ({}))).description ?? '') === original;
+  console.log(`  info: my_account description ${lagged ? 'matches' : 'still lags behind'} the restored brandingSettings description`);
+}
+
+/** Stored brandingSettings description, read via an unapproved preview of a different description (never executed). */
+async function storedDescription() {
+  const preview = await call('youtube_preflight_update_channel', { description: `${PREFIX}read ${stamp} ${Date.now()}` });
+  return preview.desired?.current?.description ?? '';
 }
 
 async function approvedQuiet(description) {
   // Nothing to restore if the description already matches (the server refuses a no-op preview with invalid_input).
-  if (((await call('youtube_my_account')).description ?? '') === description) return;
+  if (await storedDescription() === description) return;
   return quietApproved('youtube_preflight_update_channel', { description }, 'youtube_approve', 'youtube_update_channel', { description });
 }
 
