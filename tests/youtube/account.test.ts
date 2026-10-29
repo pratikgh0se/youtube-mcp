@@ -174,6 +174,53 @@ describe('AccountService', () => {
     });
   });
 
+  function failingAccount(mutateApi: (api: YouTubeDataApi) => void): AccountService {
+    const provider = accountApi();
+    mutateApi(provider);
+    return new AccountService(
+      { getAccessToken: async () => 'access-token' },
+      new YouTubeClient(config(), { createAuthorizedApi: () => provider, createPublicApi: () => accountApi() }),
+      ownedVideos(),
+    );
+  }
+
+  it.each([
+    [{ code: 403, errors: [{ reason: 'forbidden' }] }, 403, 'forbidden'],
+    [{ response: { status: 404, data: { error: { errors: [{ reason: 'subscriptionNotFound' }] } } } }, 404, 'subscriptionNotFound'],
+  ])('surfaces a clean 4xx rejection with status and reason, not provider_outcome_unknown', async (failure, status, reason) => {
+    const account = failingAccount((api) => {
+      api.videos.rate = async () => { throw failure; };
+      api.subscriptions!.insert = async () => { throw failure; };
+      api.subscriptions!.delete = async () => { throw failure; };
+      api.commentThreads.insert = async () => { throw failure; };
+    });
+    const expected = { code: 'provider_error', status, reason };
+    await expect(account.rateVideo({ videoId: 'video-1', rating: 'like', confirm: true })).rejects.toMatchObject(expected);
+    await expect(account.subscribe({ channelId: 'c1', confirm: true })).rejects.toMatchObject(expected);
+    await expect(account.unsubscribe({ subscriptionId: 'sub-1', confirm: true })).rejects.toMatchObject(expected);
+    await expect(account.createComment({ videoId: 'video-1', text: 'Hi', confirm: true })).rejects.toMatchObject(expected);
+  });
+
+  it.each([
+    ['a 503', { code: 503, errors: [{ reason: 'backendError' }] }],
+    ['a network error', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
+  ])('keeps %s as provider_outcome_unknown', async (_name, failure) => {
+    const account = failingAccount((api) => { api.videos.rate = async () => { throw failure; }; });
+    await expect(account.rateVideo({ videoId: 'video-1', rating: 'like', confirm: true })).rejects.toMatchObject({ code: 'provider_outcome_unknown' });
+  });
+
+  it('keeps an invalid response after a successful insert as provider_outcome_unknown', async () => {
+    const account = failingAccount((api) => { api.commentThreads.insert = async () => ({ data: {} }); });
+    await expect(account.createComment({ videoId: 'video-1', text: 'Hi', confirm: true })).rejects.toMatchObject({ code: 'provider_outcome_unknown' });
+  });
+
+  it('accepts an inserted comment whose textDisplay is empty by falling back to textOriginal', async () => {
+    const account = failingAccount((api) => {
+      api.commentThreads.insert = async () => ({ data: { id: 'comment-3', snippet: { topLevelComment: { snippet: { authorDisplayName: 'Me', textDisplay: '', textOriginal: 'Held for review' } } } } });
+    });
+    await expect(account.createComment({ videoId: 'video-1', text: 'Held for review', confirm: true })).resolves.toEqual({ id: 'comment-3', author: 'Me', text: 'Held for review' });
+  });
+
   it('returns threads associated with the authenticated channel without claiming their authorship', async () => {
     const commentThreadRequests: Record<string, unknown>[] = [];
     const api = accountApi(commentThreadRequests);

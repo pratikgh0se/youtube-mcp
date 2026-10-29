@@ -1,4 +1,4 @@
-import { confirmationRequiredError, AppError, toSafeError } from '../errors.js';
+import { confirmationRequiredError, AppError, isDefinitiveRejection, toSafeError } from '../errors.js';
 import type { OAuthCapability, OAuthService } from '../auth/oauth.js';
 import type {
   ChannelSummary,
@@ -183,8 +183,8 @@ export class AccountService {
     const api = await this.authorized('youtube.write');
     try {
       return await send(api);
-    } catch {
-      throw accountMutationOutcomeUnknownError();
+    } catch (error) {
+      throw isDefinitiveRejection(error) ? toSafeError(error) : accountMutationOutcomeUnknownError();
     }
   }
 }
@@ -281,7 +281,7 @@ function normalizeComment(value: unknown): CommentSummary[] {
   const snippet = asRecord(topLevelComment?.snippet);
   const id = stringValue(candidate?.id);
   const author = stringValue(snippet?.authorDisplayName);
-  const text = stringValue(snippet?.textDisplay);
+  const text = stringValue(snippet?.textDisplay) ?? stringValue(snippet?.textOriginal);
   if (!id || !author || !text) {
     return [];
   }
