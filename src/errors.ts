@@ -166,6 +166,8 @@ function actionFor(status: number | undefined, reason: string | undefined, thumb
     case 'commentNotFound':
     case 'captionNotFound':
       return 'YouTube could not find that resource. Check the ID.';
+    case 'invalidPublishAt':
+      return 'YouTube only schedules a private video that has never been public, with a future publishAt (ISO 8601).';
     case 'rateLimitExceeded':
     case 'userRateLimitExceeded':
       return 'YouTube is rate limiting requests. Wait a minute, then try again.';

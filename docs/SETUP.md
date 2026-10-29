@@ -200,7 +200,7 @@ Caption download cost is not listed on Google's page.
 
 **Uploads from new projects.** Google's revision history says videos uploaded through the API from unverified projects created after July 28, 2020 may be locked to private until the project passes an audit. Google's `videos.insert` reference says the opposite. Treat public uploads as possibly unavailable until you have checked on your own project.
 
-<!-- E2E: confirm private-lock behaviour -->
+As of October 2026, live testing on an unverified, unaudited Testing-mode project showed API uploads as unlisted were allowed and stayed unlisted after processing, and a private video could be switched to unlisted and to public through the API. Google may still lock unaudited projects' uploads to private; if yours is locked, request an API audit.
 
 This server uploads as private by default, so the lock does not block normal use.
 

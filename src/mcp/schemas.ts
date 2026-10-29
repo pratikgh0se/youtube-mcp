@@ -83,7 +83,7 @@ const metadataFields = {
   categoryId: id.optional(),
   defaultLanguage: z.string().min(2).max(16).optional(),
   privacyStatus: z.enum(['private', 'unlisted', 'public']).optional(),
-  publishAt: z.string().datetime().optional(),
+  publishAt: z.string().datetime().describe('Future ISO 8601 time. YouTube only schedules a private video that has never been public.').optional(),
   containsSyntheticMedia: z.boolean().optional(),
   selfDeclaredMadeForKids: z.boolean().optional(),
   publish: z.boolean().optional(),

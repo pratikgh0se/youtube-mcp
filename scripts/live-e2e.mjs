@@ -9,7 +9,8 @@
 //                                            without it the comment + moderation group is SKIPPED
 //   YOUTUBE_E2E_GROUPS                       comma list of groups to run (account is always run); others are SKIPPED
 //   YOUTUBE_E2E_FRESH_UPLOAD=1               lifecycle group: always upload a new test video instead of reusing an archived one
-//                                            (reuse = newest private, unscheduled video titled "youtube-mcp e2e lifecycle ...")
+//                                            (reuse = newest private, unscheduled video titled "youtube-mcp e2e lifecycle ...").
+//                                            The scheduled-publish step needs a never-published video, so it is SKIPPED on a reused one.
 //   YOUTUBE_E2E_ARCHIVE_VIDEO_IDS            comma list of owned video ids to archive (private, unscheduled) at the end of the run;
 //                                            each id must be confirmed as owned by the confirmed channel first
 //   YOUTUBE_E2E_TAKEOUT                      path to a Takeout watch-history .json/.html instead of the synthetic one
@@ -711,30 +712,34 @@ async function lifecycleGroup() {
     }
     subStep('start: private', 'PASS', lifecycleInfo.reused ? 'reused archived video' : 'fresh upload');
 
+    // Scheduled publish runs FIRST: YouTube only accepts status.publishAt on a private video that has never been published.
+    // Set, verify publishAt, then clear it with the archive tools (update_metadata cannot remove publishAt).
+    if (lifecycleInfo.reused) subStep('private + publishAt (+2d)', 'SKIPPED', 'reused video was already published; YouTube only schedules never-published private videos (set YOUTUBE_E2E_FRESH_UPLOAD=1)');
+    else {
+      const publishAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+      await setState('private + publishAt (+2d)', { privacyStatus: 'private', publishAt, elevated: true },
+        (item) => (item?.publishAt && Math.abs(Date.parse(item.publishAt) - Date.parse(publishAt)) < 60_000 ? undefined : `publishAt is ${item?.publishAt ?? 'absent'}, expected ${publishAt}`));
+      try {
+        await approved({
+          pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve',
+          exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
+        });
+        await retry(async () => {
+          const item = await ownedItem();
+          if (item?.privacyStatus !== 'private' || item.publishAt) throw new E2EError(`after clear: privacy ${item?.privacyStatus}, publishAt ${item?.publishAt ?? 'absent'}`, 'verify_failed', 'youtube_get_owned_video');
+        });
+        subStep('clear publishAt (archive_video)', 'PASS');
+      } catch (error) {
+        subStep('clear publishAt (archive_video)', 'FAIL', error.message);
+        throw error;
+      }
+    }
+
     await setState('private -> unlisted', { privacyStatus: 'unlisted' }, isPrivacy('unlisted'));
     const firstPublic = await setState('unlisted -> public', publicFields, publicVerify, { blocked: blocked403 });
     let publicOk = firstPublic === 'PASS';
     if (publicOk) await setState('public -> private', { privacyStatus: 'private' }, isPrivacy('private'));
     else subStep('public -> private', 'SKIPPED', 'video never became public');
-
-    // Scheduled publish: set, verify publishAt, then clear it with the archive tools (update_metadata cannot remove publishAt).
-    const publishAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
-    await setState('private + publishAt (+2d)', { privacyStatus: 'private', publishAt, elevated: true },
-      (item) => (item?.publishAt && Math.abs(Date.parse(item.publishAt) - Date.parse(publishAt)) < 60_000 ? undefined : `publishAt is ${item?.publishAt ?? 'absent'}, expected ${publishAt}`));
-    try {
-      await approved({
-        pre: 'youtube_preflight_archive_video', preArgs: { videoId }, approve: 'youtube_approve',
-        exec: 'youtube_archive_video', execArgs: { videoId }, attempts: 3,
-      });
-      await retry(async () => {
-        const item = await ownedItem();
-        if (item?.privacyStatus !== 'private' || item.publishAt) throw new E2EError(`after clear: privacy ${item?.privacyStatus}, publishAt ${item?.publishAt ?? 'absent'}`, 'verify_failed', 'youtube_get_owned_video');
-      });
-      subStep('clear publishAt (archive_video)', 'PASS');
-    } catch (error) {
-      subStep('clear publishAt (archive_video)', 'FAIL', error.message);
-      throw error;
-    }
 
     if (publicOk) {
       const second = await setState('private -> public (again)', publicFields, publicVerify, { blocked: blocked403 });

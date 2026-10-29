@@ -66,6 +66,13 @@ describe('toSafeError', () => {
     });
   });
 
+  it('explains a 400 invalidPublishAt rejection', () => {
+    expect(toSafeError({ response: { status: 400, data: { error: { errors: [{ reason: 'invalidPublishAt' }] } } } })).toMatchObject({
+      code: 'provider_error', status: 400, reason: 'invalidPublishAt', retryable: false,
+      action: expect.stringContaining('never been public'),
+    });
+  });
+
   it('never copies an unsafe reason string or raw response body', () => {
     const safe = toSafeError({ response: { status: 400, data: { error: { errors: [{ reason: 'Bearer abc.def secret token' }], message: 'raw body' } } } });
     expect(safe.reason).toBeUndefined();
