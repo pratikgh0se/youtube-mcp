@@ -229,7 +229,10 @@ function createGoogleDataApi(auth: string | GoogleOAuthClient): YouTubeDataApi {
       rate: async (request) => ({ data: (await api.videos.rate(request as never)).data }),
       update: async (request) => ({ data: (await api.videos.update(request as never)).data }),
     },
-    channels: { list: async (request) => ({ data: (await api.channels.list(request as never)).data }) },
+    channels: {
+      list: async (request) => ({ data: (await api.channels.list(request as never)).data }),
+      update: async (request) => ({ data: (await api.channels.update(request as never)).data }),
+    },
     commentThreads: {
       list: async (request) => ({ data: (await api.commentThreads.list(request as never)).data }),
       insert: async (request) => ({ data: (await api.commentThreads.insert(request as never)).data }),
