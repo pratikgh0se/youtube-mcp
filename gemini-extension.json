@@ -1,11 +1,11 @@
 {
   "name": "youtube-mcp",
-  "version": "0.2.0",
-  "description": "Search YouTube, manage your channel and read your analytics. Every change to your account is previewed and needs your approval first.",
+  "version": "0.3.0",
+  "description": "Search YouTube, manage your channel and read your analytics. Changes to your channel and content are previewed and need your approval first; viewer actions need explicit confirmation.",
   "mcpServers": {
     "youtube-mcp": {
       "command": "npx",
-      "args": ["-y", "github:pratikgh0se/youtube-mcp#v0.2.0", "--transport", "stdio"]
+      "args": ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz", "--transport", "stdio"]
     }
   },
   "settings": [
@@ -16,22 +16,22 @@
       "sensitive": true
     },
     {
-      "name": "OAuth client JSON path (optional)",
-      "description": "Absolute path to the Desktop OAuth client JSON. Only needed for account and creator tools.",
+      "name": "OAuth client JSON path",
+      "description": "Absolute path to the Desktop OAuth client JSON. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_OAUTH_CLIENT_SECRET_FILE"
     },
     {
-      "name": "Profile name (optional)",
-      "description": "A name you choose, for example creator-main. Only needed for creator tools.",
+      "name": "Profile name",
+      "description": "A name you choose, for example creator-main. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_MCP_PROFILE_ID"
     },
     {
-      "name": "Channel ID (optional)",
-      "description": "Your YouTube channel ID, starting with UC. Only needed for creator tools.",
+      "name": "Channel ID",
+      "description": "Your YouTube channel ID, starting with UC. Needed for your channel's tools (playlists, uploads, captions, comments, analytics).",
       "envVar": "YOUTUBE_MCP_CHANNEL_ID"
     },
     {
-      "name": "State directory (optional)",
+      "name": "State directory",
       "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
       "envVar": "YOUTUBE_MCP_STATE_DIR"
     }

@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "youtube-mcp",
   "display_name": "YouTube MCP",
-  "version": "0.2.0",
-  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Every change to your account is previewed and needs your approval first.",
+  "version": "0.3.0",
+  "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Changes to your channel and content are previewed and need your approval first; viewer actions need explicit confirmation.",
   "author": {
     "name": "Pratik Ghose",
     "url": "https://github.com/pratikgh0se"
@@ -40,31 +40,31 @@
     },
     "youtube_oauth_client_secret_file": {
       "type": "file",
-      "title": "OAuth client JSON file (optional)",
-      "description": "Desktop OAuth client JSON from Google Cloud. Only needed for account and creator tools. Leave empty for public tools only.",
-      "required": false
+      "title": "OAuth client JSON file",
+      "description": "Desktop OAuth client JSON downloaded from Google Cloud. Used to sign in to your channel for playlists, analytics, uploads and comment replies.",
+      "required": true
     },
     "youtube_mcp_profile_id": {
       "type": "string",
-      "title": "Profile name (optional)",
-      "description": "A name you choose, for example creator-main. Keeps local state separate per profile. Only needed for creator tools.",
-      "required": false
+      "title": "Profile name",
+      "description": "A short name you choose, e.g. my-channel. Keeps local state separate per channel.",
+      "required": true
     },
     "youtube_mcp_channel_id": {
       "type": "string",
-      "title": "Channel ID (optional)",
-      "description": "Your YouTube channel ID, starting with UC. The signed-in Google account must own it. Only needed for creator tools.",
-      "required": false
+      "title": "Channel ID",
+      "description": "Your channel ID starting with UC (YouTube → Settings → Advanced settings). The signed-in Google account must own it.",
+      "required": true
     },
     "youtube_mcp_state_dir": {
       "type": "directory",
-      "title": "State directory (optional)",
-      "description": "Where local state (OAuth token, approvals, local history database) lives. Leave empty to use ~/.youtube-mcp.",
+      "title": "State directory",
+      "description": "Where the sign-in token, approvals and local history live. Leave empty to use ~/.youtube-mcp.",
       "required": false
     }
   },
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"],
-    "runtimes": { "node": ">=22.0.0" }
+    "runtimes": { "node": ">=22.13.0" }
   }
 }

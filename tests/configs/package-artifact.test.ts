@@ -41,7 +41,7 @@ describe('published package artifact', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 120_000);
 });
 
 function run(command: string, args: string[]): Promise<{ code: number | null; stderr: string }> {

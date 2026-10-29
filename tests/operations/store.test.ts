@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import Database from 'better-sqlite3';
+import { openDatabase, type SqliteDatabase } from '../../src/sqlite/open-database.js';
 
 import { OperationStore } from '../../src/operations/store.js';
 
@@ -250,8 +250,8 @@ function withInternalProfileLock<T>(store: OperationStore, profileId: string, ac
     .withProfileLock(profileId, action);
 }
 
-function lockDatabase(stateDir: string): Database.Database {
-  const database = new Database(join(stateDir, 'operation-locks.sqlite'));
+function lockDatabase(stateDir: string): SqliteDatabase {
+  const database = openDatabase(join(stateDir, 'operation-locks.sqlite'));
   database.exec('CREATE TABLE IF NOT EXISTS operation_locks (profile_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at INTEGER NOT NULL, owner_pid INTEGER NOT NULL)');
   return database;
 }

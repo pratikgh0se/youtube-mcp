@@ -2,8 +2,7 @@ import { chmod, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/prom
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import Database from 'better-sqlite3';
-import { openDatabase } from '../sqlite/open-database.js';
+import { isSqliteBusyError, openDatabase, type SqliteDatabase } from '../sqlite/open-database.js';
 
 import type { ConnectionProfile, OperationReconciliation, OperationState } from '../types.js';
 import { AppError } from '../errors.js';
@@ -175,13 +174,13 @@ async function acquireLease(stateDir: string, profileId: string, options: Operat
   await chmod(databasePath, 0o600);
   database.pragma(`busy_timeout = ${Math.max(1, Math.min(waitMs, 100))}`);
   database.exec('CREATE TABLE IF NOT EXISTS operation_locks (profile_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at INTEGER NOT NULL, owner_pid INTEGER NOT NULL DEFAULT -1)');
-  const columns = database.pragma('table_info(operation_locks)') as Array<{ name?: string }>;
+  const columns = database.prepare<[], { name?: string }>('PRAGMA table_info(operation_locks)').all();
   if (!columns.some((column) => column.name === 'owner_pid')) {
     database.exec('ALTER TABLE operation_locks ADD COLUMN owner_pid INTEGER NOT NULL DEFAULT -1');
   }
   const token = randomUUID();
   const insert = database.prepare('INSERT OR IGNORE INTO operation_locks (profile_id, token, expires_at, owner_pid) VALUES (?, ?, ?, ?)');
-  const readLease = database.prepare('SELECT token, expires_at AS expiresAt, owner_pid AS ownerPid FROM operation_locks WHERE profile_id = ?');
+  const readLease = database.prepare<[string], { token: string; expiresAt: number; ownerPid: number }>('SELECT token, expires_at AS expiresAt, owner_pid AS ownerPid FROM operation_locks WHERE profile_id = ?');
   const steal = database.prepare(`
     UPDATE operation_locks SET token = ?, expires_at = ?, owner_pid = ?
     WHERE profile_id = ? AND token = ? AND expires_at <= ?
@@ -192,7 +191,7 @@ async function acquireLease(stateDir: string, profileId: string, options: Operat
       if (insert.run(profileId, token, now + staleMs, process.pid).changes === 1) {
         return activeLease(database, profileId, token);
       }
-      const current = readLease.get(profileId) as { token: string; expiresAt: number; ownerPid: number } | undefined;
+      const current = readLease.get(profileId);
       if (
         current &&
         current.expiresAt <= now &&
@@ -216,7 +215,7 @@ async function acquireLease(stateDir: string, profileId: string, options: Operat
 }
 
 function activeLease(
-  database: Database.Database,
+  database: SqliteDatabase,
   profileId: string,
   token: string,
 ): { release(): Promise<void> } {
@@ -253,11 +252,6 @@ function operationStoreLeaseLostError(): AppError {
     'Reconcile the operation state before attempting another mutation.',
     false,
   );
-}
-
-function isSqliteBusyError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null &&
-    ['SQLITE_BUSY', 'SQLITE_LOCKED'].includes(String((error as { code?: unknown }).code));
 }
 
 function isProcessAlive(pid: number): boolean {

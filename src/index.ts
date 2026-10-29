@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { suppressSqliteExperimentalWarning } from './sqlite/warning-filter.js';
+import { assertSqliteAvailable } from './sqlite/open-database.js';
 import { OAuthService } from './auth/oauth.js';
 import { loadConfig, loadProjectEnvFile } from './config.js';
 import { ConsumptionInsights } from './consumption/insights.js';
@@ -11,6 +13,7 @@ import { ConsumptionStore } from './consumption/store.js';
 import { CurationStore } from './consumption/curation-store.js';
 import { CurationService, ProfileCurationService } from './consumption/curation.js';
 import { createMcpServer } from './mcp/server.js';
+import { createApprovalTool } from './operations/approval.js';
 import { OperationService } from './operations/service.js';
 import { OperationStore } from './operations/store.js';
 import { parseHttpPort, runHttp } from './transports/http.js';
@@ -25,13 +28,29 @@ import { UploadService } from './youtube/uploads.js';
 import { CreatorContentService, createCreatorContentProvider } from './youtube/creator-content.js';
 import { PlaylistService, createPlaylistProvider } from './youtube/playlists.js';
 import { ModerationService, createModerationProvider } from './youtube/moderation.js';
+import { AppError } from './errors.js';
+import { ChannelProfileService, createChannelProvider } from './youtube/channel-profile.js';
+import { SubscriptionCurationService, createSubscriptionProvider } from './youtube/subscriptions.js';
 import type { AppConfig } from './types.js';
+
+// Must run before node:sqlite is first loaded (it is loaded lazily, in main()).
+suppressSqliteExperimentalWarning();
 
 async function main(arguments_: string[]): Promise<void> {
   if (arguments_[0] === '--version') {
     const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
     process.stdout.write(`${manifest.version}\n`);
     return;
+  }
+
+  // Surface a missing node:sqlite immediately instead of as a hidden provider_error on the first write.
+  let storageIssue: { code: string; message: string; action: string } | undefined;
+  try {
+    assertSqliteAvailable();
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    storageIssue = { code: error.code, message: error.message, action: error.action };
+    process.stderr.write(`${error.message} ${error.action}.\n`);
   }
 
   loadProjectEnvFile(process.cwd());
@@ -59,7 +78,7 @@ async function main(arguments_: string[]): Promise<void> {
     uploadChunk: async (input) => client.resumableUpload(await oauth.getAccessToken('youtube.upload')).uploadChunk(input),
     cancel: async (sessionUrl) => client.resumableUpload(await oauth.getAccessToken('youtube.upload')).cancel(sessionUrl),
   }, creatorProfile, resources);
-  const content = new CreatorContentService(operations, resources, createCreatorContentProvider(oauth, client), selectedCreatorProfile(config));
+  const content = new CreatorContentService(operations, resources, createCreatorContentProvider(oauth, client), selectedCreatorProfile(config), config.stateDir);
   const playlists = new PlaylistService(operations, createPlaylistProvider(oauth, client), selectedCreatorProfile(config), resources);
   const moderation = new ModerationService(operations, createModerationProvider(oauth, client), creatorProfile, resources);
   const curationStore = new CurationStore(consumptionDatabasePath);
@@ -69,19 +88,23 @@ async function main(arguments_: string[]): Promise<void> {
       status: async () => ({
         ...await oauth.status(),
         apiKeyConfigured: Boolean(config.apiKey),
-        localConsumption: existsSync(consumptionDatabasePath)
+        ...(storageIssue ? { localStorage: { available: false as const, ...storageIssue } } : {}),
+        localConsumption: existsSync(consumptionDatabasePath) && !storageIssue
           ? { databaseInitialized: true, hasImportedHistory: store.hasImportedHistory() }
           : { databaseInitialized: false, hasImportedHistory: false },
       }),
     },
     public: new PublicService(client),
-    account: new AccountService(oauth, client),
+    account: new AccountService(oauth, client, resources),
     creator: new CreatorAnalyticsService(oauth, client),
     resources,
     uploads,
     content,
     playlists,
     moderation,
+    channelProfile: new ChannelProfileService(operations, createChannelProvider(oauth, client), creatorProfile, resources),
+    subscriptions: new SubscriptionCurationService(operations, createSubscriptionProvider(oauth, client), creatorProfile, resources),
+    approvals: createApprovalTool(operations, creatorProfile),
     curation,
     importer: new TakeoutImporter(store),
     insights: new ConsumptionInsights(store),

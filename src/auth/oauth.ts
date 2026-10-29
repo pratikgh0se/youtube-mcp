@@ -46,6 +46,7 @@ export type AuthStatus = {
   authorized: boolean;
   tokenHealth?: 'stored' | 'not_authorized' | 'not_configured';
   apiKeyConfigured?: boolean;
+  localStorage?: { available: false; code: string; message: string; action: string };
   localConsumption?: { databaseInitialized: boolean; hasImportedHistory: boolean };
   scopes: string[];
   scopeReadiness: { ready: boolean; required: string[]; missing: string[] };

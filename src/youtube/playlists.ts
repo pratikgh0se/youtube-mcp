@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import type { ConnectionProfile, OperationPreview, OperationReceipt } from '../types.js';
-import { AppError, providerOutcomeUnknownError, toSafeError } from '../errors.js';
+import { AppError, isDefinitiveRejection, providerOutcomeUnknownError, toSafeError } from '../errors.js';
 import { OperationService } from '../operations/service.js';
 import type { OAuthService } from '../auth/oauth.js';
+import { retryWhileMissing } from './read-after-write.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
 
 type CreatorProfile = ConnectionProfile & { purpose: 'creator'; channelId: string };
@@ -51,8 +52,9 @@ export class PlaylistService {
         const playlistId = requiredId((await this.provider.createPlaylist(desired)).id, 'playlist');
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, { tool: 'youtube_list_playlists', arguments: {} });
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, { tool: 'youtube_list_playlists', arguments: {} });
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -78,8 +80,9 @@ export class PlaylistService {
         if (response.id && response.id !== input.playlistId) throw providerError('playlist');
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId: input.playlistId };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, playlistMetadataReconciliation(input.playlistId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, playlistMetadataReconciliation(input.playlistId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -103,8 +106,9 @@ export class PlaylistService {
         await this.provider.deletePlaylist({ id: input.playlistId });
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId: input.playlistId, deleted: true };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, playlistMetadataReconciliation(input.playlistId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, playlistMetadataReconciliation(input.playlistId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -129,8 +133,9 @@ export class PlaylistService {
         const playlistItemId = requiredId((await this.provider.addPlaylistItem(desired)).id, 'playlist item');
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId: input.playlistId, playlistItemId };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -154,8 +159,9 @@ export class PlaylistService {
         await this.provider.removePlaylistItem({ id: input.playlistItemId });
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId: input.playlistId, playlistItemId: input.playlistItemId, removed: true };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -181,8 +187,9 @@ export class PlaylistService {
         if (response.id && response.id !== input.playlistItemId) throw providerError('playlist item');
         return { ...await this.settle(input.approvalId, 'succeeded'), playlistId: input.playlistId, playlistItemId: input.playlistItemId };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, playlistReconciliation(input.playlistId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -192,14 +199,14 @@ export class PlaylistService {
   }
 
   private async ownedPlaylist(playlistId: string): Promise<ProviderPlaylist> {
-    const playlist = await this.provider.getPlaylist(playlistId);
+    const playlist = await retryWhileMissing(() => this.provider.getPlaylist(playlistId));
     if (!playlist || playlist.id !== playlistId || playlist.channelId !== this.profile.channelId || !playlist.title) throw ownershipRequiredError();
     return playlist;
   }
 
   private async ownedItem(playlistId: string, playlistItemId: string): Promise<ProviderPlaylistItem> {
     await this.ownedPlaylist(playlistId);
-    const item = await this.provider.getPlaylistItem(playlistItemId);
+    const item = await retryWhileMissing(() => this.provider.getPlaylistItem(playlistItemId));
     if (!item || item.id !== playlistItemId || item.playlistId !== playlistId || !item.videoId) throw ownershipRequiredError();
     return item;
   }
@@ -221,7 +228,7 @@ export class PlaylistService {
     if (preview.kind !== kind || preview.targetId !== targetId || (desired && preview.desiredFingerprint !== fingerprint(desired))) throw approvalRequiredError();
   }
 
-  private settle(operationId: string, state: 'succeeded' | 'unknown'): Promise<OperationReceipt> {
+  private settle(operationId: string, state: 'succeeded' | 'failed' | 'unknown'): Promise<OperationReceipt> {
     return this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state });
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "youtube-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "author": {
@@ -29,7 +29,7 @@
     "scripts"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -40,6 +40,7 @@
     "prepare": "npm run build",
     "prepack": "npm run build",
     "lint": "tsc --noEmit -p tsconfig.json",
+    "smoke:e2e": "node scripts/live-e2e.mjs",
     "smoke:private-playlist": "node scripts/private-playlist-smoke.mjs",
     "smoke:read-only": "node scripts/read-only-smoke.mjs",
     "test": "vitest run",
@@ -48,13 +49,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "better-sqlite3": "^12.6.2",
     "googleapis": "^171.4.0",
     "youtube-transcript": "^1.2.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.20.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",

@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import type { ConnectionProfile, OperationPreview, OperationReceipt } from '../types.js';
-import { AppError, providerOutcomeUnknownError, toSafeError } from '../errors.js';
+import { AppError, isDefinitiveRejection, providerOutcomeUnknownError, toSafeError } from '../errors.js';
 import { OperationService } from '../operations/service.js';
 import type { OAuthService } from '../auth/oauth.js';
+import { retryWhileMissing } from './read-after-write.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
 
 type CreatorProfile = ConnectionProfile & { purpose: 'creator'; channelId: string };
@@ -53,8 +54,9 @@ export class ModerationService {
         const replyId = requiredId((await this.provider.reply({ parentId: input.commentId, text: input.text })).id, 'comment reply');
         return { ...await this.settle(input.approvalId, 'succeeded'), commentId: input.commentId, replyId };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, replyReconciliation(input.commentId, input.text));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, replyReconciliation(input.commentId, input.text));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -83,8 +85,9 @@ export class ModerationService {
         await this.provider.setStatus({ commentId: input.commentId, moderationStatus: input.moderationStatus, ...(input.banAuthor ? { banAuthor: true } : {}) });
         return { ...await this.settle(input.approvalId, 'succeeded'), commentId: input.commentId, moderationStatus: input.moderationStatus };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, commentReconciliation(input.commentId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, commentReconciliation(input.commentId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -108,8 +111,9 @@ export class ModerationService {
         await this.provider.deleteComment({ commentId: input.commentId });
         return { ...await this.settle(input.approvalId, 'succeeded'), commentId: input.commentId, deleted: true };
       } catch (error) {
-        await this.settle(input.approvalId, 'unknown');
-        throw providerOutcomeUnknownError(input.approvalId, commentReconciliation(input.commentId));
+        const definitive = isDefinitiveRejection(error);
+        await this.settle(input.approvalId, definitive ? 'failed' : 'unknown');
+        throw definitive ? toSafeError(error) : providerOutcomeUnknownError(input.approvalId, commentReconciliation(input.commentId));
       }
     } catch (error) { throw toSafeError(error); }
   }
@@ -119,7 +123,7 @@ export class ModerationService {
   }
 
   private async ownedComment(commentId: string, requireAuthor = false): Promise<ProviderComment> {
-    const comment = await this.provider.getComment(commentId);
+    const comment = await retryWhileMissing(() => this.provider.getComment(commentId));
     if (
       !comment ||
       comment.id !== commentId ||
@@ -153,7 +157,7 @@ export class ModerationService {
     if (preview.kind !== kind || preview.targetId !== targetId || (desired && preview.desiredFingerprint !== fingerprint(desired))) throw approvalRequiredError();
   }
 
-  private settle(operationId: string, state: 'succeeded' | 'unknown'): Promise<OperationReceipt> {
+  private settle(operationId: string, state: 'succeeded' | 'failed' | 'unknown'): Promise<OperationReceipt> {
     return this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state });
   }
 }

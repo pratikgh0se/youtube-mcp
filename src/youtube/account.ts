@@ -1,10 +1,11 @@
-import { confirmationRequiredError, AppError, toSafeError } from '../errors.js';
+import { confirmationRequiredError, AppError, isDefinitiveRejection, toSafeError } from '../errors.js';
 import type { OAuthCapability, OAuthService } from '../auth/oauth.js';
 import type {
   ChannelSummary,
   CommentSummary,
   CreateCommentInput,
   MutationInput,
+  QuotaContext,
   RateVideoInput,
   SubscribeInput,
   SubscriptionResult,
@@ -14,6 +15,7 @@ import type {
   VideoRatingResult,
 } from '../types.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
+import type { ResourceService } from './resources.js';
 
 type AccountYouTubeApi = YouTubeDataApi & {
   subscriptions: NonNullable<YouTubeDataApi['subscriptions']>;
@@ -35,6 +37,7 @@ export class AccountService {
   constructor(
     private readonly oauth: Pick<OAuthService, 'getAccessToken'>,
     private readonly client: YouTubeClient,
+    private readonly resources: Pick<ResourceService, 'getOwnedVideo'>,
   ) {}
 
   async subscribe(input: SubscribeInput): Promise<SubscriptionResult> {
@@ -65,7 +68,14 @@ export class AccountService {
     });
   }
 
+  /** Posting as the channel is limited to its own videos (spam guard); getOwnedVideo retries while a fresh video is not yet readable. */
   async createComment(input: CreateCommentInput): Promise<CommentSummary> {
+    requireConfirmation(input);
+    try {
+      await this.resources.getOwnedVideo(input.videoId);
+    } catch (error) {
+      throw toSafeError(error).code === 'ownership_required' ? commentOwnershipRequiredError() : toSafeError(error);
+    }
     return this.mutate(input, async (api) => {
         const response = await api.commentThreads.insert({
           part: 'snippet',
@@ -76,7 +86,8 @@ export class AccountService {
             },
           },
         });
-        const comment = normalizeComment(response.data)[0];
+        // comments.insert omits authorDisplayName for the authenticated author; the id is the only must-have.
+        const comment = normalizeComment(response.data, { author: 'You', text: input.text })[0];
         if (!comment) {
           throw invalidProviderResponse('comment');
         }
@@ -92,6 +103,37 @@ export class AccountService {
         maxResults,
       });
       return (response.data.items ?? []).flatMap(normalizeSubscription);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  /**
+   * Paginated subscription list. Plain: 1 quota unit. With details: +1 channels.list per 50 channels and +1 playlistItems.list per
+   * channel (lastUploadAt), i.e. about 1 extra unit per returned channel.
+   */
+  async listSubscriptionsPage(input: { maxResults?: number; pageToken?: string; details?: boolean } = {}): Promise<{
+    items: SubscriptionSummary[];
+    nextPageToken?: string;
+    context: QuotaContext;
+  }> {
+    try {
+      const api = await this.authorized();
+      const response = await api.subscriptions.list({
+        part: 'snippet',
+        mine: true,
+        maxResults: input.maxResults,
+        ...(input.pageToken ? { pageToken: input.pageToken } : {}),
+      });
+      let items = (response.data.items ?? []).flatMap(normalizeSubscription);
+      let quotaUnits = 1;
+      if (input.details && items.length > 0) {
+        const enriched = await enrichSubscriptions(api, items);
+        items = enriched.items;
+        quotaUnits += enriched.quotaUnits;
+      }
+      const nextPageToken = response.data.nextPageToken ?? undefined;
+      return { items, ...(nextPageToken ? { nextPageToken } : {}), context: { quotaUnits, source: 'youtube_data_api' } };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -123,7 +165,7 @@ export class AccountService {
         maxResults,
         textFormat: 'plainText',
       });
-      return (comments.data.items ?? []).flatMap(normalizeComment);
+      return (comments.data.items ?? []).flatMap((item) => normalizeComment(item));
     } catch (error) {
       throw toSafeError(error);
     }
@@ -142,10 +184,67 @@ export class AccountService {
     const api = await this.authorized('youtube.write');
     try {
       return await send(api);
-    } catch {
-      throw accountMutationOutcomeUnknownError();
+    } catch (error) {
+      throw isDefinitiveRejection(error) ? toSafeError(error) : accountMutationOutcomeUnknownError();
     }
   }
+}
+
+async function enrichSubscriptions(api: AccountYouTubeApi, items: SubscriptionSummary[]): Promise<{ items: SubscriptionSummary[]; quotaUnits: number }> {
+  let quotaUnits = 0;
+  const channels = new Map<string, { subscriberCount?: number; subscriberCountHidden?: boolean; videoCount?: number; uploads?: string }>();
+  for (let index = 0; index < items.length; index += 50) {
+    const response = await api.channels.list({
+      part: 'statistics,contentDetails',
+      id: items.slice(index, index + 50).map((item) => item.channelId).join(','),
+      maxResults: 50,
+    });
+    quotaUnits += 1;
+    for (const raw of response.data.items ?? []) {
+      const channel = asRecord(raw);
+      const id = stringValue(channel?.id);
+      if (!id) continue;
+      const statistics = asRecord(channel?.statistics);
+      const hidden = statistics?.hiddenSubscriberCount === true;
+      channels.set(id, {
+        ...(hidden ? { subscriberCountHidden: true } : countOf('subscriberCount', statistics?.subscriberCount)),
+        ...countOf('videoCount', statistics?.videoCount),
+        ...optionalString('uploads', asRecord(asRecord(channel?.contentDetails)?.relatedPlaylists)?.uploads),
+      });
+    }
+  }
+  const lastUploads = new Map<string, string>();
+  for (const [channelId, info] of channels) {
+    if (!info.uploads) continue;
+    quotaUnits += 1;
+    try {
+      const response = await api.playlistItems.list({ part: ['contentDetails'], playlistId: info.uploads, maxResults: 1 });
+      const publishedAt = stringValue(asRecord(asRecord(response.data.items?.[0])?.contentDetails)?.videoPublishedAt);
+      if (publishedAt) lastUploads.set(channelId, publishedAt);
+    } catch (error) {
+      // Channels with no uploads (or a hidden uploads playlist) answer 404; anything else, notably quota, must surface.
+      if (toSafeError(error).code === 'quota_exhausted') throw error;
+    }
+  }
+  return {
+    quotaUnits,
+    items: items.map((item) => {
+      const info = channels.get(item.channelId);
+      const lastUploadAt = lastUploads.get(item.channelId);
+      return {
+        ...item,
+        ...(info?.subscriberCount !== undefined ? { subscriberCount: info.subscriberCount } : {}),
+        ...(info?.subscriberCountHidden ? { subscriberCountHidden: true } : {}),
+        ...(info?.videoCount !== undefined ? { videoCount: info.videoCount } : {}),
+        ...(lastUploadAt ? { lastUploadAt } : {}),
+      };
+    }),
+  };
+}
+
+function countOf<Key extends string>(key: Key, value: unknown): Partial<Record<Key, number>> {
+  const parsed = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? { [key]: parsed } as Partial<Record<Key, number>> : {};
 }
 
 function normalizeSubscription(value: unknown): SubscriptionSummary[] {
@@ -176,14 +275,14 @@ function normalizeChannelId(value: unknown): string[] {
   return id ? [id] : [];
 }
 
-function normalizeComment(value: unknown): CommentSummary[] {
+function normalizeComment(value: unknown, fallback: { author: string; text: string } | undefined = undefined): CommentSummary[] {
   const candidate = asRecord(value);
   const threadSnippet = asRecord(candidate?.snippet);
   const topLevelComment = asRecord(threadSnippet?.topLevelComment);
   const snippet = asRecord(topLevelComment?.snippet);
   const id = stringValue(candidate?.id);
-  const author = stringValue(snippet?.authorDisplayName);
-  const text = stringValue(snippet?.textDisplay);
+  const author = stringValue(snippet?.authorDisplayName) ?? fallback?.author;
+  const text = stringValue(snippet?.textDisplay) ?? stringValue(snippet?.textOriginal) ?? fallback?.text;
   if (!id || !author || !text) {
     return [];
   }
@@ -196,6 +295,15 @@ function invalidProviderResponse(resource: string): AppError {
     `The YouTube provider did not return a valid ${resource}.`,
     'Try again. If the problem continues, verify the provider configuration.',
     true,
+  );
+}
+
+function commentOwnershipRequiredError(): AppError {
+  return new AppError(
+    'ownership_required',
+    'Comments can only be created on videos owned by the selected creator channel.',
+    'Replies on your own videos are supported. Use a video ID from youtube_list_owned_videos; commenting on other channels\' videos is not supported.',
+    false,
   );
 }
 

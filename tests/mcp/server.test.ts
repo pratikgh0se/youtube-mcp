@@ -39,11 +39,14 @@ function fakeDependencies(): McpDependencies {
       getVideo: async ({ videoId }) => ({ items: [{ id: videoId, title: 'Video', channelId: 'c1' }], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
       getChannel: async ({ channelId }) => ({ items: [{ id: channelId, title: 'Channel' }], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
       getComments: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' } }),
+      trending: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' as const } }),
+      listChannelVideos: async () => ({ items: [], channelId: 'c1', uploadsPlaylistId: 'u1', context: { quotaUnits: 3, source: 'youtube_data_api' as const } }),
       getTranscript: async () => ({ available: false, source: 'best_effort' }),
     },
     account: {
       myAccount: async () => ({ id: 'c1', title: 'Channel' }),
       listSubscriptions: async () => [],
+      listSubscriptionsPage: async () => ({ items: [], context: { quotaUnits: 1, source: 'youtube_data_api' as const } }),
       listChannelCommentThreads: async () => [],
       subscribe: async ({ channelId }) => ({ subscriptionId: 'sub1', channelId }),
       unsubscribe: async ({ subscriptionId }) => ({ subscriptionId, unsubscribed: true }),
@@ -54,6 +57,7 @@ function fakeDependencies(): McpDependencies {
       overview: async () => ({ views: 1, estimatedMinutesWatched: 2, averageViewDuration: 3, likes: 4, comments: 5, subscribersGained: 6, subscribersLost: 7 }),
       topVideos: async () => [],
       retention: async () => [],
+      report: async () => ({ query: { startDate: '2026-01-01', endDate: '2026-01-02', metrics: 'views' }, columns: ['views'], rows: [], rowCount: 0 }),
     },
     resources: {
       listOwnedVideos: async ({ maxResults, pageToken }: { maxResults?: number; pageToken?: string }) => ({
@@ -82,13 +86,14 @@ function fakeDependencies(): McpDependencies {
       preflight: async () => ({ approvalId: 'upload-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.upload', targetId: 'upload-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'source', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_upload_status', arguments: { uploadId: 'upload-1' } } }),
       preflightResume: async () => ({ approvalId: 'resume-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.upload.resume', targetId: 'upload-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'source', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_upload_status', arguments: { uploadId: 'upload-1' } } }),
       preflightCancel: async () => ({ approvalId: 'cancel-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.upload.cancel', targetId: 'upload-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'source', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_upload_status', arguments: { uploadId: 'upload-1' } } }),
-      approve: async () => ({ approvalId: 'upload-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.upload', targetId: 'upload:1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'source', expiresAt: '2026-08-18T03:00:00.000Z', state: 'approved' as const, reconciliation: { tool: 'youtube_get_upload_status', arguments: { uploadId: 'pending' } } }),
       upload: async () => ({ uploadId: 'upload-1', state: 'complete', videoId: 'video-1' } satisfies UploadStatusResult),
       resume: async () => ({ uploadId: 'upload-1', state: 'in_progress', offset: 10 } satisfies UploadStatusResult),
       getStatus: async () => ({ uploadId: 'upload-1', state: 'in_progress', offset: 10 } satisfies UploadStatusResult),
       cancel: async () => ({ uploadId: 'upload-1', state: 'cancelled' } satisfies UploadStatusResult),
     },
     content: {
+      preflightArchiveVideo: async () => ({ approvalId: 'archive-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.archive', targetId: 'video-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
+      archiveVideo: async () => ({ operationId: 'archive-approval', state: 'succeeded' as const, videoId: 'video-1', privacyStatus: 'private' as const, scheduled: false as const }),
       preflightMetadataUpdate: async () => ({ approvalId: 'metadata-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.metadata.update', targetId: 'video-1', desired: { snippet: { title: 'New' } }, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
       preflightThumbnail: async () => ({ approvalId: 'thumbnail-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.thumbnail.set', targetId: 'video-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
       setThumbnail: async () => ({ operationId: 'thumbnail-approval', state: 'succeeded' as const, videoId: 'video-1' }),
@@ -97,14 +102,11 @@ function fakeDependencies(): McpDependencies {
       uploadCaption: async () => ({ operationId: 'caption-upload-approval', state: 'succeeded' as const, captionId: 'caption-2' }),
       preflightCaptionUpdate: async () => ({ approvalId: 'caption-update-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'caption.update', targetId: 'caption-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_list_caption_tracks', arguments: { videoId: 'video-1' } } }),
       updateCaption: async () => ({ operationId: 'caption-update-approval', state: 'succeeded' as const, captionId: 'caption-1' }),
-      preflightCaptionDownload: async () => ({ approvalId: 'caption-download-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'caption.download', targetId: 'caption-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_list_caption_tracks', arguments: { videoId: 'video-1' } } }),
-      downloadCaption: async () => ({ operationId: 'caption-download-approval', state: 'succeeded' as const, captionId: 'caption-1', downloaded: true as const }),
+      downloadCaption: async () => ({ state: 'succeeded' as const, captionId: 'caption-1', downloaded: true as const, path: '/state/downloads/a.vtt' }),
       preflightCaptionDelete: async () => ({ approvalId: 'caption-delete-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'caption.delete', targetId: 'caption-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'planned' as const, reconciliation: { tool: 'youtube_list_caption_tracks', arguments: { videoId: 'video-1' } } }),
       deleteCaption: async () => ({ operationId: 'caption-delete-approval', state: 'succeeded' as const, captionId: 'caption-1', deleted: true as const }),
-      approve: async () => ({ approvalId: 'metadata-approval', profile: { id: 'creator-a', purpose: 'creator' as const, channelId: 'creator-channel' }, kind: 'video.metadata.update', targetId: 'video-1', desired: {}, desiredFingerprint: 'desired', currentFingerprint: 'current', expiresAt: '2026-08-18T03:00:00.000Z', state: 'approved' as const, reconciliation: { tool: 'youtube_get_owned_video', arguments: { videoId: 'video-1' } } }),
     },
     playlists: {
-      approve: async () => playlistPreview('approved'),
       preflightCreate: async () => playlistPreview('planned'), create: async () => playlistReceipt('playlist-2'),
       preflightUpdate: async () => playlistPreview('planned'), update: async () => playlistReceipt('playlist-1'),
       preflightDelete: async () => playlistPreview('planned'), delete: async () => ({ ...playlistReceipt('playlist-1'), deleted: true as const }),
@@ -113,11 +115,13 @@ function fakeDependencies(): McpDependencies {
       preflightReorder: async () => playlistPreview('planned'), reorder: async () => ({ ...playlistReceipt('playlist-1'), playlistItemId: 'playlist-item-1' }),
     },
     moderation: {
-      approve: async () => moderationPreview('approved'),
       preflightReply: async () => moderationPreview('planned'), reply: async () => ({ ...moderationReceipt(), commentId: 'comment-1', replyId: 'reply-1' }),
       preflightSetStatus: async () => moderationPreview('planned'), setStatus: async () => ({ ...moderationReceipt(), commentId: 'comment-1', moderationStatus: 'published' as const }),
       preflightDelete: async () => moderationPreview('planned'), delete: async () => ({ ...moderationReceipt(), commentId: 'comment-1', deleted: true as const }),
     },
+    channelProfile: { preflightUpdate: async () => { throw new Error('unused'); }, update: async () => { throw new Error('unused'); } },
+    subscriptions: { preflightUnsubscribeMany: async () => { throw new Error('unused'); }, unsubscribeMany: async () => { throw new Error('unused'); } },
+    approvals: { approve: async () => moderationPreview('approved') },
     curation: {
       savePolicy: (input) => ({ profileId: 'consumer-a', ...input }),
       saveCandidate: (input) => ({ profileId: 'consumer-a', ...input }),
@@ -139,8 +143,9 @@ describe('createMcpServer', () => {
     const result = await client.listTools();
 
     expect(result.tools.map((tool) => tool.name).sort()).toEqual(expect.arrayContaining([
-      'youtube_approve_creator_content',
-      'youtube_approve_upload',
+      'youtube_approve',
+      'youtube_archive_video',
+      'youtube_preflight_archive_video',
       'youtube_auth_status',
       'youtube_cancel_upload',
       'youtube_consumption_profile',
@@ -176,7 +181,6 @@ describe('createMcpServer', () => {
       'youtube_my_account',
       'youtube_preflight_cancel_upload',
       'youtube_preflight_caption_delete',
-      'youtube_preflight_caption_download',
       'youtube_preflight_caption_update',
       'youtube_preflight_caption_upload',
       'youtube_preflight_resume_upload',
@@ -207,6 +211,25 @@ describe('createMcpServer', () => {
     await server.close();
   });
 
+  it('exposes one youtube_approve tool and a read-only caption download', async () => {
+    const { client, server } = await connectedServer(fakeDependencies());
+    const tools = (await client.listTools()).tools;
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain('youtube_approve');
+    for (const removed of ['youtube_approve_upload', 'youtube_approve_playlist', 'youtube_approve_creator_content', 'youtube_approve_moderation', 'youtube_preflight_caption_download']) {
+      expect(names).not.toContain(removed);
+    }
+    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.annotations).toMatchObject({ destructiveHint: false });
+    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.annotations?.readOnlyHint).toBeUndefined();
+    expect(tools.find((tool) => tool.name === 'youtube_download_caption')?.inputSchema.required).not.toContain('approvalId');
+    const approved = await client.callTool({ name: 'youtube_approve', arguments: { approvalId: 'a', confirm: true } });
+    expect(approved.isError).not.toBe(true);
+
+    await client.close();
+    await server.close();
+  });
+
   it('registers creator packaging tools with approval IDs and strict media input schemas', async () => {
     const { client, server } = await connectedServer(fakeDependencies());
 
@@ -225,13 +248,13 @@ describe('createMcpServer', () => {
     const { client, server } = await connectedServer(fakeDependencies());
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
-      'youtube_preflight_create_playlist', 'youtube_approve_playlist', 'youtube_create_playlist',
+      'youtube_preflight_create_playlist', 'youtube_create_playlist',
       'youtube_preflight_update_playlist', 'youtube_update_playlist',
       'youtube_preflight_delete_playlist', 'youtube_delete_playlist',
       'youtube_preflight_add_playlist_item', 'youtube_add_playlist_item',
       'youtube_preflight_remove_playlist_item', 'youtube_remove_playlist_item',
       'youtube_preflight_reorder_playlist_item', 'youtube_reorder_playlist_item',
-      'youtube_preflight_reply_to_comment', 'youtube_approve_moderation', 'youtube_reply_to_comment',
+      'youtube_preflight_reply_to_comment', 'youtube_reply_to_comment',
       'youtube_preflight_set_comment_moderation_status', 'youtube_set_comment_moderation_status',
       'youtube_preflight_delete_comment', 'youtube_delete_comment',
     ]));
@@ -376,6 +399,35 @@ describe('createMcpServer', () => {
     expect(JSON.stringify(denied)).toContain('confirmation_required');
     expect(received).toEqual({ channelId: 'c1', confirm: true });
     expect(confirmed.structuredContent).toEqual({ subscriptionId: 'sub1', channelId: 'c1' });
+
+    await client.close();
+    await server.close();
+  });
+  it('registers the v0.3.0 tools with the right hints and routes their inputs', async () => {
+    const seen: Record<string, unknown> = {};
+    const dependencies = fakeDependencies();
+    dependencies.creator.report = async (input) => { seen.report = input; return { query: { startDate: 'a', endDate: 'b', metrics: 'views' }, columns: ['views'], rows: [{ views: 1 }], rowCount: 1 }; };
+    dependencies.account.listSubscriptionsPage = async (input) => { seen.subs = input; return { items: [], context: { quotaUnits: 1, source: 'youtube_data_api' } }; };
+    dependencies.public.search = async (input) => { seen.search = input; return { items: [], context: { quotaUnits: 100, source: 'youtube_data_api' } }; };
+    const { client, server } = await connectedServer(dependencies);
+    const tools = (await client.listTools()).tools;
+    const read = ['youtube_creator_report', 'youtube_trending', 'youtube_list_channel_videos'];
+    const write = ['youtube_preflight_update_channel', 'youtube_update_channel', 'youtube_preflight_unsubscribe_many', 'youtube_unsubscribe_many'];
+    for (const name of read) expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ readOnlyHint: true });
+    for (const name of write) expect(tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ destructiveHint: true });
+    expect(tools.find((tool) => tool.name === 'youtube_update_channel')?.inputSchema.required).toEqual(expect.arrayContaining(['approvalId']));
+    expect(tools.find((tool) => tool.name === 'youtube_unsubscribe_many')?.inputSchema.required).toEqual(expect.arrayContaining(['subscriptionIds', 'approvalId']));
+
+    await client.callTool({ name: 'youtube_creator_report', arguments: { metrics: ['views'], dimensions: ['day'] } });
+    await client.callTool({ name: 'youtube_list_subscriptions', arguments: { details: true, maxResults: 5, pageToken: 'p' } });
+    await client.callTool({ name: 'youtube_search', arguments: { query: 'q', order: 'date', videoDuration: 'short' } });
+    const bad = await client.callTool({ name: 'youtube_search', arguments: { query: 'q', order: 'nope' } });
+    expect(seen).toEqual({
+      report: { metrics: ['views'], dimensions: ['day'] },
+      subs: { details: true, maxResults: 5, pageToken: 'p' },
+      search: { query: 'q', order: 'date', videoDuration: 'short' },
+    });
+    expect(bad).toMatchObject({ isError: true });
 
     await client.close();
     await server.close();

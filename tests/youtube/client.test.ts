@@ -55,6 +55,17 @@ describe('YouTubeClient Google dependencies', () => {
     expect(analyticsAuths[0]).toEqual({ setCredentials: expect.any(Function) });
   });
 
+  it('exposes every optional method the providers depend on on the real authorized adapter', () => {
+    const api = new YouTubeClient(config()).authorized('access-token');
+
+    expect(api).toMatchObject({
+      channels: { list: expect.any(Function), update: expect.any(Function) },
+      commentThreads: { insert: expect.any(Function) },
+      subscriptions: { insert: expect.any(Function), delete: expect.any(Function), list: expect.any(Function) },
+      videos: { rate: expect.any(Function), update: expect.any(Function) },
+    });
+  });
+
   it('keeps public API-key construction separate from OAuth construction', () => {
     const dataAuths: unknown[] = [];
     const factory: GoogleApiFactory = {

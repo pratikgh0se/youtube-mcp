@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { constants } from 'node:fs';
-import { lstat, open, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, unlink, type FileHandle } from 'node:fs/promises';
+import { basename, join, sep } from 'node:path';
 
 import type { ResourceService } from './resources.js';
-import { AppError, providerOutcomeUnknownError, toSafeError } from '../errors.js';
+import { AppError, isDefinitiveRejection, providerOutcomeUnknownError, toSafeError } from '../errors.js';
 import type { OAuthService } from '../auth/oauth.js';
 import type { CaptionTrack, ConnectionProfile, OperationPreview, OperationReceipt } from '../types.js';
 import { OperationService } from '../operations/service.js';
+import { retryWhileMissing } from './read-after-write.js';
 import { YouTubeClient, type YouTubeDataApi } from './client.js';
 
 type CreatorProfile = ConnectionProfile & { purpose: 'creator'; channelId: string };
@@ -30,10 +33,11 @@ export type MetadataUpdateInput = MetadataFields & {
   approvalId?: string;
   confirm?: boolean;
 };
+export type ArchiveVideoInput = { videoId: string; approvalId?: string; confirm?: boolean };
 export type ThumbnailInput = { videoId: string; filePath: string; mimeType: 'image/jpeg' | 'image/png'; approvalId?: string; confirm?: boolean };
 export type CaptionUploadInput = { videoId: string; filePath: string; mimeType: CaptionMimeType; language: string; name: string; isDraft?: boolean; approvalId?: string; confirm?: boolean };
 export type CaptionUpdateInput = CaptionUploadInput & { captionId: string };
-export type CaptionDownloadInput = { videoId: string; captionId: string; outputPath: string; format?: 'srt' | 'ttml' | 'vtt'; approvalId?: string; confirm?: boolean };
+export type CaptionDownloadInput = { videoId: string; captionId: string; fileName: string; format?: 'srt' | 'ttml' | 'vtt' };
 export type CaptionDeleteInput = { videoId: string; captionId: string; approvalId?: string; confirm?: boolean };
 export type CaptionMimeType = 'application/octet-stream' | 'application/ttml+xml' | 'text/plain' | 'text/vtt';
 
@@ -74,6 +78,7 @@ export class CreatorContentService {
     private readonly resources: Pick<ResourceService, 'getOwnedVideo' | 'listCaptionTracks'>,
     private readonly provider: CreatorContentProvider,
     private readonly profile: CreatorProfile,
+    private readonly stateDir: string,
   ) {}
 
   async preflightMetadataUpdate(input: MetadataUpdateInput): Promise<OperationPreview> {
@@ -106,6 +111,36 @@ export class CreatorContentService {
       });
       await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
       return { operationId: input.approvalId, state: 'succeeded', videoId: input.videoId };
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  async preflightArchiveVideo(input: ArchiveVideoInput): Promise<OperationPreview> {
+    try {
+      const current = await this.currentVideo(input.videoId);
+      if (isArchived(current)) throw alreadyArchivedError();
+      return this.preflight('video.archive', input.videoId, archiveDesired(current), fingerprint(current), { tool: 'youtube_get_owned_video', arguments: { videoId: input.videoId } });
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  async archiveVideo(input: ArchiveVideoInput & { approvalId: string }): Promise<{ operationId: string; state: 'succeeded'; videoId: string; privacyStatus: 'private'; scheduled: false }> {
+    try {
+      await this.requireApproved(input, 'video.archive', input.videoId);
+      const current = await this.currentVideo(input.videoId);
+      if (isArchived(current)) throw alreadyArchivedError();
+      const preview = await this.operations.requireApproved({ approvalId: input.approvalId, confirm: input.confirm, profileId: this.profile.id, channelId: this.profile.channelId });
+      this.requireContext(preview, 'video.archive', input.videoId, archiveDesired(current));
+      await this.claim(input, 'video.archive', input.videoId, undefined, fingerprint(current));
+      await this.providerOutcome(input.approvalId, { tool: 'youtube_get_owned_video', arguments: { videoId: input.videoId } }, async () => {
+        const { publishAt: _scheduled, ...status } = current.status;
+        const response = await this.provider.updateVideo({ id: current.id, snippet: current.snippet, status: { ...status, privacyStatus: 'private' } });
+        if (response.id && response.id !== input.videoId) throw providerError('video');
+      });
+      await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
+      return { operationId: input.approvalId, state: 'succeeded', videoId: input.videoId, privacyStatus: 'private', scheduled: false };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -193,26 +228,16 @@ export class CreatorContentService {
     }
   }
 
-  async preflightCaptionDownload(input: CaptionDownloadInput): Promise<OperationPreview> {
-    await this.requireOwnedCaption(input.videoId, input.captionId);
-    return this.preflight('caption.download', input.captionId, captionDownloadDesired(input), input.captionId, captionReconciliation(input.videoId));
-  }
-
-  async downloadCaption(input: CaptionDownloadInput & { approvalId: string }): Promise<{ operationId: string; state: 'succeeded'; captionId: string; downloaded: true }> {
+  /** Read-only on YouTube: no preview or approval. Ownership is verified; the file is created exclusively (never overwritten) inside `<state dir>/downloads/`. */
+  async downloadCaption(input: CaptionDownloadInput): Promise<{ state: 'succeeded'; captionId: string; downloaded: true; path: string }> {
     try {
-      await this.requireApproved(input, 'caption.download', input.captionId, captionDownloadDesired(input));
+      const fileName = sanitizeCaptionFileName(input.fileName);
       await this.requireOwnedCaption(input.videoId, input.captionId);
-      await requireAvailableCaptionDestination(input.outputPath);
-      await this.claim(input, 'caption.download', input.captionId, captionDownloadDesired(input), input.captionId);
-      const bytes = await this.providerOutcome(input.approvalId, captionReconciliation(input.videoId), () => this.provider.downloadCaption({ captionId: input.captionId, format: input.format }));
-      try {
-        await writeCaptionDestination(input.outputPath, bytes);
-      } catch (error) {
-        await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'failed' });
-        throw error;
-      }
-      await this.operations.settle({ operationId: input.approvalId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'succeeded' });
-      return { operationId: input.approvalId, state: 'succeeded', captionId: input.captionId, downloaded: true };
+      const destination = join(await ensureDownloadsDirectory(this.stateDir), fileName);
+      await requireAvailableCaptionDestination(destination);
+      const bytes = await this.provider.downloadCaption({ captionId: input.captionId, format: input.format });
+      await writeCaptionDestination(destination, bytes);
+      return { state: 'succeeded', captionId: input.captionId, downloaded: true, path: destination };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -260,15 +285,16 @@ export class CreatorContentService {
   private async providerOutcome<T>(operationId: string, reconciliation: { tool: string; arguments: Record<string, string> }, action: () => Promise<T>): Promise<T> {
     try {
       return await action();
-    } catch {
-      await this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state: 'unknown' });
-      throw providerOutcomeUnknownError(operationId, reconciliation);
+    } catch (error) {
+      const definitive = isDefinitiveRejection(error);
+      await this.operations.settle({ operationId, profileId: this.profile.id, channelId: this.profile.channelId, state: definitive ? 'failed' : 'unknown' });
+      throw definitive ? toSafeError(error) : providerOutcomeUnknownError(operationId, reconciliation);
     }
   }
 
   private async currentVideo(videoId: string): Promise<CreatorVideo> {
     await this.requireOwnedVideo(videoId);
-    const current = await this.provider.getVideo({ videoId });
+    const current = await retryWhileMissing(() => this.provider.getVideo({ videoId }));
     if (!current || current.id !== videoId || current.channelId !== this.profile.channelId || !current.snippet.title) throw ownershipRequiredError();
     return normalizeVideo(current);
   }
@@ -280,8 +306,7 @@ export class CreatorContentService {
 
   private async requireOwnedCaption(videoId: string, captionId: string): Promise<CaptionTrack> {
     await this.requireOwnedVideo(videoId);
-    const captions = await this.resources.listCaptionTracks({ videoId });
-    const caption = captions.items.find((candidate) => candidate.id === captionId && candidate.videoId === videoId);
+    const caption = await retryWhileMissing(async () => (await this.resources.listCaptionTracks({ videoId })).items.find((candidate) => candidate.id === captionId && candidate.videoId === videoId));
     if (!caption) throw ownershipRequiredError();
     return caption;
   }
@@ -312,7 +337,7 @@ export function createCreatorContentProvider(
       return (response.data.items ?? []).flatMap(normalizeProviderVideo)[0];
     },
     async setThumbnail(input) {
-      const response = await (await api()).thumbnails.set({ videoId: input.videoId, media: { mimeType: input.mimeType, body: input.bytes } });
+      const response = await (await api()).thumbnails.set({ videoId: input.videoId, media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) } });
       return idResponse(response.data);
     },
     async updateVideo(input) {
@@ -324,14 +349,14 @@ export function createCreatorContentProvider(
       return (response.data.items ?? []).flatMap(normalizeProviderCaption);
     },
     async insertCaption(input) {
-      const response = await (await api()).captions.insert({ part: ['snippet'], requestBody: { snippet: captionSnippet(input) }, media: { mimeType: input.mimeType, body: input.bytes } });
+      const response = await (await api()).captions.insert({ part: ['snippet'], requestBody: { snippet: captionSnippet(input) }, media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) } });
       return idResponse(response.data);
     },
     async updateCaption(input) {
       const response = await (await api()).captions.update({
         part: [input.isDraft === undefined ? 'id' : 'snippet'],
         requestBody: { id: input.captionId, ...(input.isDraft !== undefined ? { snippet: { isDraft: input.isDraft } } : {}) },
-        media: { mimeType: input.mimeType, body: input.bytes },
+        media: { mimeType: input.mimeType, body: Readable.from(Buffer.from(input.bytes)) },
       });
       return idResponse(response.data);
     },
@@ -357,6 +382,18 @@ type CreatorContentApi = YouTubeDataApi & {
   };
 };
 
+function isArchived(video: CreatorVideo): boolean { return video.status.privacyStatus === 'private' && !video.status.publishAt; }
+function archiveDesired(video: CreatorVideo): Record<string, unknown> {
+  return {
+    videoId: video.id,
+    title: video.snippet.title,
+    current: { privacyStatus: video.status.privacyStatus ?? 'unknown', ...(video.status.publishAt ? { publishAt: video.status.publishAt } : {}) },
+    result: { privacyStatus: 'private', scheduled: false },
+    note: 'Reversible: only visibility changes. Make it public or unlisted again with youtube_update_metadata.',
+  };
+}
+function alreadyArchivedError(): AppError { return new AppError('already_archived', 'This video is already private and not scheduled, so there is nothing to archive.', 'No action needed. Use youtube_update_metadata to change its visibility.', false); }
+
 function metadataDesired(input: MetadataUpdateInput): MetadataDesired {
   return {
     snippet: {
@@ -381,10 +418,6 @@ function captionUploadDesired(input: CaptionUploadInput, fileFingerprint: string
 
 function captionUpdateDesired(input: CaptionUpdateInput, fileFingerprint: string): Record<string, unknown> {
   return { captionId: input.captionId, ...captionUploadDesired(input, fileFingerprint) };
-}
-
-function captionDownloadDesired(input: CaptionDownloadInput): Record<string, unknown> {
-  return { videoId: input.videoId, captionId: input.captionId, outputTargetFingerprint: fingerprint({ outputPath: input.outputPath }), ...(input.format ? { format: input.format } : {}) };
 }
 
 function captionDeleteDesired(input: CaptionDeleteInput, caption: CaptionTrack): Record<string, unknown> {
@@ -460,6 +493,33 @@ async function withValidatedLocalFile<T>(
   }
 }
 
+const captionExtensions = ['.srt', '.vtt', '.sbv', '.txt'];
+
+/** Accepts a bare file name only: no separators, no leading dot, one of the caption extensions. */
+export function sanitizeCaptionFileName(name: string): string {
+  const lower = name.toLowerCase();
+  if (!name || name.length > 120 || name !== basename(name) || /[\\/\0]/.test(name) || name.startsWith('.') || !captionExtensions.some((ext) => lower.endsWith(ext)) || name === '..') {
+    throw new AppError('invalid_input', 'fileName must be a plain file name ending in .srt, .vtt, .sbv or .txt, with no directory parts.', 'Pass only a file name such as captions.vtt; files are written to the downloads folder in the state directory.', false);
+  }
+  return name;
+}
+
+/** Creates `<state dir>/downloads` (0700) and returns its real path, refusing a downloads directory that resolves outside the state directory. */
+async function ensureDownloadsDirectory(stateDir: string): Promise<string> {
+  try {
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const downloads = join(stateDir, 'downloads');
+    await mkdir(downloads, { recursive: true, mode: 0o700 });
+    const realDownloads = await realpath(downloads);
+    const expected = join(await realpath(stateDir), 'downloads');
+    if (realDownloads !== expected || !(realDownloads + sep).startsWith(expected + sep)) throw invalidCaptionDestinationError();
+    return realDownloads;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw invalidCaptionDestinationError();
+  }
+}
+
 async function requireAvailableCaptionDestination(outputPath: string): Promise<void> {
   try {
     await lstat(outputPath);
@@ -486,10 +546,11 @@ async function writeCaptionDestination(outputPath: string, bytes: string | Uint8
     await handle.writeFile(bytes);
     await handle.chmod(0o600);
   } catch {
+    await handle.close().catch(() => undefined);
+    await unlink(outputPath).catch(() => undefined);
     throw invalidCaptionDestinationError();
-  } finally {
-    await handle.close();
   }
+  await handle.close();
 }
 
 function normalizeVideo(video: CreatorVideo): CreatorVideo {
@@ -532,8 +593,8 @@ function requiredId(value: string | undefined, resource: string): string { if (!
 function ownershipRequiredError(): AppError { return new AppError('ownership_required', 'This resource is not owned by the selected creator channel.', 'Select the owning creator profile or use an owned resource ID.', false); }
 function approvalRequiredError(): AppError { return new AppError('approval_required', 'This operation requires an approved preview.', 'Preflight, approve, and repeat with confirm: true.', false); }
 function invalidFileError(): AppError { return new AppError('invalid_file', 'The selected local media file is missing, empty, or exceeds the supported size.', 'Choose a readable supported local file and preflight again.', false); }
-function captionDestinationExistsError(): AppError { return new AppError('caption_destination_exists', 'The caption download destination already exists.', 'Choose a new destination path; existing files and symbolic links are never overwritten.', false); }
-function invalidCaptionDestinationError(): AppError { return new AppError('invalid_caption_destination', 'The caption download destination could not be created safely.', 'Choose a writable new local destination and preflight again.', false); }
+function captionDestinationExistsError(): AppError { return new AppError('caption_destination_exists', 'The caption download destination already exists.', 'Choose a new fileName; existing files and symbolic links are never overwritten.', false); }
+function invalidCaptionDestinationError(): AppError { return new AppError('invalid_caption_destination', 'The caption download destination could not be created safely.', 'Check that the downloads folder in the state directory is writable and not a symbolic link elsewhere, then retry.', false); }
 function providerError(resource: string): AppError { return new AppError('provider_error', `The YouTube provider did not return a valid ${resource}.`, 'Try again. If the problem continues, verify the provider configuration.', true); }
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException { return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT'; }
 function isAlreadyExistsError(error: unknown): error is NodeJS.ErrnoException { return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'EEXIST'; }

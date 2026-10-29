@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import Database from 'better-sqlite3';
+import { openDatabase, type SqliteDatabase } from '../../src/sqlite/open-database.js';
 
 import { MAX_TAKEOUT_BYTES, TakeoutImporter } from '../../src/consumption/importer.js';
 import { ConsumptionStore } from '../../src/consumption/store.js';
@@ -87,7 +87,7 @@ describe('TakeoutImporter', () => {
       subtitles: [{ name: 'Code Channel', url: 'https://www.youtube.com/channel/c1' }],
       details: [{ name: 'From Google Search' }],
     };
-    const legacyDatabase = new Database(databasePath);
+    const legacyDatabase = openDatabase(databasePath);
     legacyDatabase.exec(`
       CREATE TABLE watch_events (
         source_key TEXT PRIMARY KEY,

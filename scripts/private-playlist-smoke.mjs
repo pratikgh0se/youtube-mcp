@@ -7,7 +7,7 @@ if (process.env.YOUTUBE_LIVE_PRIVATE_SMOKE !== '1') {
 }
 
 const title = `youtube-mcp release smoke ${new Date().toISOString()}`;
-const transport = new StdioClientTransport({ command: process.execPath, args: ['dist/index.js', '--transport', 'stdio'], stderr: 'pipe' });
+const transport = new StdioClientTransport({ command: process.execPath, args: ['dist/index.js', '--transport', 'stdio'], stderr: 'pipe', env: { ...process.env } });
 const client = new Client({ name: 'youtube-mcp-private-smoke', version: '0.1.0' });
 let playlistId;
 
@@ -21,13 +21,13 @@ try {
   }
 
   const created = await call('youtube_preflight_create_playlist', { title, description: 'Temporary release validation playlist.', privacyStatus: 'private' });
-  await call('youtube_approve_playlist', { approvalId: created.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: created.approvalId, confirm: true });
   const playlist = await call('youtube_create_playlist', { title, description: 'Temporary release validation playlist.', privacyStatus: 'private', approvalId: created.approvalId, confirm: true });
   playlistId = playlist.playlistId;
 
   const deleted = await retry(() => call('youtube_preflight_delete_playlist', { playlistId }));
-  await call('youtube_approve_playlist', { approvalId: deleted.approvalId, confirm: true });
-  await call('youtube_delete_playlist', { playlistId, approvalId: deleted.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: deleted.approvalId, confirm: true });
+  await retry(() => call('youtube_delete_playlist', { playlistId, approvalId: deleted.approvalId, confirm: true }));
 
   await retry(async () => {
     const reconciliation = await call('youtube_get_playlist', { playlistId });
@@ -51,8 +51,8 @@ async function call(name, args) {
 
 async function deletePlaylist(id) {
   const preview = await retry(() => call('youtube_preflight_delete_playlist', { playlistId: id }));
-  await call('youtube_approve_playlist', { approvalId: preview.approvalId, confirm: true });
-  await call('youtube_delete_playlist', { playlistId: id, approvalId: preview.approvalId, confirm: true });
+  await call('youtube_approve', { approvalId: preview.approvalId, confirm: true });
+  await retry(() => call('youtube_delete_playlist', { playlistId: id, approvalId: preview.approvalId, confirm: true }));
 }
 
 async function retry(action, attempts = 8) {

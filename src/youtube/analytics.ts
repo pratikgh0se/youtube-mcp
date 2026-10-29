@@ -1,6 +1,7 @@
-import { toSafeError } from '../errors.js';
+import { AppError, toSafeError } from '../errors.js';
 import type { OAuthService } from '../auth/oauth.js';
 import { YouTubeClient, type YouTubeAnalyticsApi } from './client.js';
+import { buildReportQuery, type CreatorReportInput, type CreatorReportQuery } from './creator-report.js';
 
 export type DateRange = {
   startDate: string;
@@ -27,16 +28,28 @@ export type RetentionPoint = {
   relativeRetentionPerformance: number;
 };
 
+export type CreatorReport = {
+  query: Omit<CreatorReportQuery, 'ids'>;
+  columns: string[];
+  rows: Array<Record<string, string | number | null>>;
+  rowCount: number;
+};
+
 export const overviewMetrics =
   'views,estimatedMinutesWatched,averageViewDuration,likes,comments,subscribersGained,subscribersLost';
 const topVideoMetrics = 'views,estimatedMinutesWatched,averageViewDuration,likes,comments';
 const retentionMetrics = 'audienceWatchRatio,relativeRetentionPerformance';
 
+/** YouTube Analytics reports by Pacific-time day, so "today" is the America/Los_Angeles calendar date, not the UTC one. */
+export function pacificToday(now: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+
 export class CreatorAnalyticsService {
   constructor(
     private readonly oauth: Pick<OAuthService, 'getAccessToken'>,
     private readonly client: YouTubeClient,
-    private readonly today: () => string = () => new Date().toISOString().slice(0, 10),
+    private readonly today: () => string = () => pacificToday(new Date()),
   ) {}
 
   async overview(range: DateRange): Promise<CreatorOverview> {
@@ -81,6 +94,24 @@ export class CreatorAnalyticsService {
         metrics: retentionMetrics,
       });
       return normalizeRetention(response.data);
+    } catch (error) {
+      throw toSafeError(error);
+    }
+  }
+
+  /** Flexible allowlisted report; validation happens before any provider call. */
+  async report(input: CreatorReportInput): Promise<CreatorReport> {
+    const { ids, ...query } = buildReportQuery(input, this.today());
+    try {
+      const response = await (await this.authorized()).reports.query({ ids, ...query });
+      const columns = (response.data.columnHeaders ?? []).map((header) => stringAt(asRecord(header) ?? {}, 'name') ?? '');
+      if (columns.some((name) => !name) || (columns.length === 0 && (response.data.rows ?? []).length > 0)) {
+        throw new AppError('provider_error', 'YouTube Analytics returned an unexpected analytics response (missing column names).', 'Try again later; no data was interpreted.', true);
+      }
+      const rows = (response.data.rows ?? []).map((row) => Object.fromEntries(
+        columns.map((name, index) => [name, cell(row[index])]),
+      ));
+      return { query, columns, rows, rowCount: rows.length };
     } catch (error) {
       throw toSafeError(error);
     }
@@ -158,4 +189,8 @@ function stringAt(row: Record<string, unknown>, name: string): string | undefine
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function cell(value: unknown): string | number | null {
+  return typeof value === 'string' || typeof value === 'number' ? value : null;
 }
