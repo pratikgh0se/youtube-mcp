@@ -897,7 +897,7 @@ async function commentsFlow(commentVideoId) {
   // Verify both are gone (deleted comments can linger briefly in reads).
   for (const gone of [replyId, commentId]) {
     await retry(async () => {
-      try { await call('youtube_get_moderation_comment', { commentId: gone }); } catch (error) { if (quotaAborted) throw error; return; }
+      try { if (!(await call('youtube_get_moderation_comment', { commentId: gone })).item) return; } catch (error) { if (quotaAborted) throw error; return; }
       throw new E2EError(`comment ${gone} still readable`, 'verify_failed', 'youtube_get_moderation_comment');
     }, { attempts: 5 }).catch((error) => record('youtube_delete_comment', 'FAIL', 0, `delete accepted but ${error.message}`));
   }
