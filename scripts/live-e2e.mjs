@@ -304,6 +304,15 @@ function addCleanup(label, run) {
   return () => { entry.done = true; };
 }
 
+/** Runs pending cleanups newest-first (optionally only those matching `only`); each runs at most once. */
+async function runCleanups(only = () => true) {
+  for (const entry of [...cleanups].reverse()) {
+    if (entry.done || !only(entry)) continue;
+    entry.done = true;
+    try { await entry.run(); log(`cleaned up ${entry.label}`); } catch (error) { cleanupFailures.push(`${entry.label}: ${redact(error.message)}`); }
+  }
+}
+
 async function ff(args) {
   await execFileAsync(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', ...args], { maxBuffer: 10 * 1024 * 1024 });
 }
@@ -353,6 +362,8 @@ async function main() {
   await runGroup('channel', channelGroup);
   await runGroup('viewer', viewerGroup);
   await runGroup('watch-history', watchHistoryGroup);
+  // Cleanups (comment deletes etc.) must run before videos are archived: comments on a private video can no longer be deleted.
+  await runCleanups();
   await archiveLeftovers();
   return tools;
 }
@@ -779,7 +790,8 @@ async function lifecycleGroup() {
     }
     await guard('youtube_preflight_archive_video', { videoId }, 'already_archived', 'an already-private, unscheduled video is refused as already archived');
   } catch (error) {
-    // Do not leave the video public/unlisted/scheduled if the run aborted midway.
+    // Do not leave the video public/unlisted/scheduled if the run aborted midway. Comment cleanups go first: they need a non-private video.
+    await runCleanups((entry) => /^(comment|reply) /.test(entry.label));
     try { await archiveVideoQuiet(videoId); archived = true; subStep('abort cleanup: archive', 'PASS'); } catch (cleanupError) { subStep('abort cleanup: archive', 'FAIL', cleanupError.message); }
     throw error;
   } finally {
@@ -831,9 +843,25 @@ async function commentsFlow(commentVideoId) {
   let commentDeleted = false;
   addCleanup(`comment ${commentId}`, async () => { if (!commentDeleted) await deleteCommentQuiet(commentId); });
 
-  await step('youtube_list_channel_comment_threads', { maxResults: 50 }, {
-    attempts: 5, check: (v) => (v.items.some((item) => item.id === commentId) ? undefined : 'new comment not in channel threads'),
-  });
+  // The channel-wide listing (allThreadsRelatedToChannelId) lags; later steps look the comment up by id, so only the shape is required.
+  {
+    const started = Date.now();
+    let seen = false;
+    const deadline = Date.now() + 90_000;
+    for (;;) {
+      let page;
+      try { page = await call('youtube_list_channel_comment_threads', { maxResults: 50 }); } catch (error) {
+        if (quotaAborted || Date.now() > deadline) { record('youtube_list_channel_comment_threads', 'FAIL', Date.now() - started, `${error.code ?? 'error'}: ${error.message}`); throw error; }
+        await sleep(5_000);
+        continue;
+      }
+      if (!Array.isArray(page?.items)) { record('youtube_list_channel_comment_threads', 'FAIL', Date.now() - started, 'unexpected response: items missing'); throw new E2EError('unexpected response: items missing', 'unexpected_response', 'youtube_list_channel_comment_threads'); }
+      seen = page.items.some((item) => item.id === commentId);
+      if (seen || Date.now() > deadline) break;
+      await sleep(10_000);
+    }
+    record('youtube_list_channel_comment_threads', 'PASS', Date.now() - started, seen ? 'new comment visible' : 'well-formed; new comment not yet indexed after 90s (YouTube listing lag)');
+  }
 
   const reply = await approved({
     pre: 'youtube_preflight_reply_to_comment', preArgs: { commentId, text: replyText }, approve: 'youtube_approve',
@@ -894,10 +922,12 @@ async function channelGroup() {
   // The write goes to brandingSettings.channel.description; my_account reads snippet.description, which YouTube syncs with a lag.
   // So verify via an unapproved (never executed) preview whose "current" snapshot is the stored brandingSettings description.
   const readDescription = () => storedDescription();
-  const suffix = ` [e2e ${stamp}]`;
+  const marker = `[e2e ${stamp}]`;
+  // YouTube trims surrounding whitespace and may normalise CRLF, so compare normalised strings (an empty original gets no leading space).
   // Unapproved probe: the preview's "current" snapshot is the exact stored description (my_account may trim).
   const probe = await step('youtube_preflight_update_channel', { description: `${PREFIX}probe ${stamp}` }, { check: (v) => (v.approvalId && v.kind === 'channel.update' && v.desired?.current ? undefined : 'malformed preview') });
   const original = field(probe);
+  const suffix = original ? ` ${marker}` : marker;
   if (original.length + suffix.length > 1000) throw new E2EError('channel description too long to append the e2e marker (1000 char limit)', 'description_too_long', 'youtube_preflight_update_channel');
   const changed = `${original}${suffix}`;
   const forgetRestore = addCleanup('channel description', () => approvedQuiet(original).catch((error) => { if (error.code !== 'invalid_input') throw error; }));
@@ -906,8 +936,8 @@ async function channelGroup() {
     pre: 'youtube_preflight_update_channel', preArgs: { description: changed }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: changed }, attempts: 2, reconcile: verifiedByReadback,
   });
   await retry(async () => {
-    if (await readDescription() !== changed) throw new E2EError('description not updated yet', 'verify_failed', 'youtube_update_channel');
-  }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `accepted but not visible: ${error.message}`));
+    if (norm(await readDescription()) !== norm(changed)) throw new E2EError('description not updated yet', 'verify_failed', 'youtube_update_channel');
+  }, { attempts: 10 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `accepted but not visible: ${error.message}`));
 
   await approved({
     pre: 'youtube_preflight_update_channel', preArgs: { description: original }, approve: 'youtube_approve', exec: 'youtube_update_channel', execArgs: { description: original }, attempts: 2, reconcile: verifiedByReadback,
@@ -915,14 +945,15 @@ async function channelGroup() {
   forgetRestore();
   await retry(async () => {
     const now = await readDescription();
-    if (now !== original) throw new E2EError('original description not restored exactly', 'verify_failed', 'youtube_update_channel');
-  }, { attempts: 6 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `restore not verified: ${error.message}`));
+    if (norm(now) !== norm(original)) throw new E2EError('original description not restored exactly', 'verify_failed', 'youtube_update_channel');
+  }, { attempts: 10 }).catch((error) => record('youtube_update_channel', 'FAIL', 0, `restore not verified: ${error.message}`));
   // Informational only: my_account (snippet.description) lags behind brandingSettings and is not part of pass/fail.
   const lagged = ((await call('youtube_my_account').catch(() => ({}))).description ?? '') === original;
   console.log(`  info: my_account description ${lagged ? 'matches' : 'still lags behind'} the restored brandingSettings description`);
 }
 
 /** Stored brandingSettings description, read via an unapproved preview of a different description (never executed). */
+const norm = (value) => String(value ?? "").replace(/\r\n/g, "\n").trim();
 async function storedDescription() {
   const preview = await call('youtube_preflight_update_channel', { description: `${PREFIX}read ${stamp} ${Date.now()}` });
   return preview.desired?.current?.description ?? '';
@@ -930,7 +961,7 @@ async function storedDescription() {
 
 async function approvedQuiet(description) {
   // Nothing to restore if the description already matches (the server refuses a no-op preview with invalid_input).
-  if (await storedDescription() === description) return;
+  if (norm(await storedDescription()) === norm(description)) return;
   return quietApproved('youtube_preflight_update_channel', { description }, 'youtube_approve', 'youtube_update_channel', { description });
 }
 
@@ -1049,10 +1080,7 @@ try {
   if (error.fatal) exitCode = 2;
   else { process.stderr.write(`Live E2E crashed: ${redact(error.stack ?? error.message)}\n`); exitCode = 1; }
 } finally {
-  for (const entry of [...cleanups].reverse()) {
-    if (entry.done) continue;
-    try { await entry.run(); log(`cleaned up ${entry.label}`); } catch (error) { cleanupFailures.push(`${entry.label}: ${redact(error.message)}`); }
-  }
+  await runCleanups();
   await client.close().catch(() => undefined);
 }
 
