@@ -560,6 +560,24 @@ async function captionsGroup() {
   }
   if (!downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
 
+  // Other formats of the same track. Quota: about 200 units per download, so about 800 more for these four.
+  const formatChecks = {
+    vtt: (t) => (t.startsWith('WEBVTT') ? undefined : 'does not start with WEBVTT'),
+    ttml: (t) => (t.includes('<tt') ? undefined : 'no <tt element'),
+    sbv: (t) => (/\b0:00:\d\d\.\d{3},\d+:\d\d:\d\d\.\d{3}/.test(t) ? undefined : 'no sbv-style 0:00:ss.mmm,h:mm:ss.mmm timestamps'),
+    scc: (t) => (t.startsWith('Scenarist_SCC') ? undefined : 'does not start with Scenarist_SCC'),
+  };
+  if (downloaded.includes('-->') && /\d,\d{3}/.test(downloaded)) record('youtube_download_caption', 'PASS', 0, 'srt has --> and comma milliseconds');
+  else record('youtube_download_caption', 'FAIL', 0, 'srt missing --> or comma milliseconds');
+  for (const [format, looksRight] of Object.entries(formatChecks)) {
+    const fileName = `e2e-caption-download-${fileStamp}-fmt.${format}`;
+    const result = await step('youtube_download_caption', { videoId, captionId, fileName, format }, { attempts: 3, delayMs: 5_000, check: (v) => (typeof v.path === 'string' && v.path.endsWith(fileName) ? undefined : 'no path returned') });
+    downloadedPaths.push(result.path);
+    const text = (await readFile(result.path, 'utf8')).replace(/^\uFEFF/, '');
+    const problem = text.trim() ? looksRight(text) : 'file is empty';
+    record('youtube_download_caption', problem ? 'FAIL' : 'PASS', 0, problem ? `${format}: ${problem}` : `${format} looks like ${format}`);
+  }
+
   await approved({
     pre: 'youtube_preflight_caption_delete', preArgs: { videoId, captionId }, approve: 'youtube_approve',
     exec: 'youtube_delete_caption', execArgs: { videoId, captionId }, attempts: 3, reconcile: verifiedByReadback,
