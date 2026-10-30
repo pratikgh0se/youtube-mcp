@@ -180,6 +180,39 @@ async function step(tool, args, { check, blocked, timeout, attempts = 1, delayMs
   throw lastError;
 }
 
+/**
+ * YouTube needs a while (observed: more than 17s) to reprocess an updated caption, and a download in that window fails
+ * with 404 captionNotFound. Only that failure is retriable here; every other error fails fast.
+ */
+const isCaptionNotReady = (error) => error.reason === 'captionNotFound' || /captionNotFound/.test(error.message ?? '')
+  || (error.code === 'provider_error' && (error.status === 404 || /\b404\b/.test(error.message ?? '')));
+const DOWNLOAD_BACKOFF_MS = [5_000, 10_000, 15_000, 20_000, 30_000]; // the last value repeats until the deadline
+
+/**
+ * One youtube_download_caption call, retried with growing backoff on retriable 404s until `deadline` (epoch ms).
+ * Records one result at the end. Quota: each attempt (including failed ones) may cost about 200 units.
+ */
+async function downloadCaptionRetrying(args, deadline) {
+  const started = Date.now();
+  const tool = 'youtube_download_caption';
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await call(tool, args);
+      if (!(typeof value.path === 'string' && value.path.endsWith(args.fileName))) throw new E2EError('unexpected response: no path returned', 'unexpected_response', tool);
+      record(tool, 'PASS', Date.now() - started);
+      return value;
+    } catch (error) {
+      const wait = DOWNLOAD_BACKOFF_MS[Math.min(attempt, DOWNLOAD_BACKOFF_MS.length - 1)];
+      if (quotaAborted || !isCaptionNotReady(error) || Date.now() + wait >= deadline) {
+        record(tool, 'FAIL', Date.now() - started, `${error.code ?? 'error'}: ${error.message}${isCaptionNotReady(error) ? ` (still not ready after ${attempt + 1} attempts)` : ''}`);
+        throw error;
+      }
+      log(`download not ready (${error.reason ?? error.code}); retry ${attempt + 1} in ${wait / 1000}s`);
+      await sleep(wait);
+    }
+  }
+}
+
 /** Calls a tool that must refuse with a specific error code; records PASS-GUARD. */
 async function guard(tool, args, expectedCode, why) {
   const started = Date.now();
@@ -517,7 +550,15 @@ async function captionsGroup() {
   await writeFile(second, srt(marker));
   const meta = { videoId, mimeType: 'application/octet-stream', language: 'en', name: 'youtube-mcp e2e' };
 
-  const knownCaptionIds = new Set(((await call('youtube_list_caption_tracks', { videoId })).items ?? []).map((track) => track.id));
+  // The reuse video may hold a track left by an aborted earlier run, which would make the upload fail with 409 captionExists.
+  // Remove only tracks this harness creates: exactly its own track name AND language. Never touch any other track.
+  const existingTracks = (await call('youtube_list_caption_tracks', { videoId })).items ?? [];
+  const staleTracks = existingTracks.filter((track) => track.name === meta.name && track.language === meta.language);
+  for (const stale of staleTracks) {
+    log(`removing stale harness caption track ${stale.id} (name "${stale.name}", language ${stale.language}) from a previous run`);
+    await deleteCaptionQuiet(videoId, stale.id).catch((error) => cleanupFailures.push(`stale caption ${stale.id}: ${error.message}`));
+  }
+  const knownCaptionIds = new Set(existingTracks.filter((track) => !staleTracks.includes(track)).map((track) => track.id));
   const captionId = (await approved({
     reconcile: async () => {
       const found = ((await call('youtube_list_caption_tracks', { videoId })).items ?? []).find((track) => !knownCaptionIds.has(track.id) && track.name === meta.name);
@@ -547,12 +588,13 @@ async function captionsGroup() {
   let downloaded = '';
   const downloadedPaths = [];
   addCleanup('downloaded caption files', async () => { await Promise.all(downloadedPaths.map((file) => rm(file, { force: true }))); });
+  // Quota: about 200 units per attempt, failed 404 attempts included; the deadline loop can spend several attempts.
   const deadline = Date.now() + 120_000;
   for (let attempt = 1; Date.now() < deadline; attempt += 1) {
     const fileName = `e2e-caption-download-${fileStamp}-${attempt}.srt`;
     const args = { videoId, captionId, fileName, format: 'srt' };
     // No preflight/approval. Ownership is verified server-side; the file lands in <state dir>/downloads/ and the tool returns its path.
-    const result = await step('youtube_download_caption', args, { attempts: 3, delayMs: 5_000, check: (v) => (typeof v.path === 'string' && v.path.endsWith(fileName) ? undefined : 'no path returned') });
+    const result = await downloadCaptionRetrying(args, deadline);
     downloadedPaths.push(result.path);
     downloaded = await readFile(result.path, 'utf8');
     if (downloaded.includes(expected)) break;
@@ -560,7 +602,8 @@ async function captionsGroup() {
   }
   if (!downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
 
-  // Other formats of the same track. Quota: about 200 units per download, so about 800 more for these four.
+  // Other formats of the same track. Quota: about 200 units per download attempt, so about 800 more for these four
+  // when each succeeds first time; every retried 404 attempt costs another 200.
   const formatChecks = {
     vtt: (t) => (t.startsWith('WEBVTT') ? undefined : 'does not start with WEBVTT'),
     ttml: (t) => (t.includes('<tt') ? undefined : 'no <tt element'),
@@ -571,7 +614,7 @@ async function captionsGroup() {
   else record('youtube_download_caption', 'FAIL', 0, 'srt missing --> or comma milliseconds');
   for (const [format, looksRight] of Object.entries(formatChecks)) {
     const fileName = `e2e-caption-download-${fileStamp}-fmt.${format}`;
-    const result = await step('youtube_download_caption', { videoId, captionId, fileName, format }, { attempts: 3, delayMs: 5_000, check: (v) => (typeof v.path === 'string' && v.path.endsWith(fileName) ? undefined : 'no path returned') });
+    const result = await downloadCaptionRetrying({ videoId, captionId, fileName, format }, Date.now() + 120_000);
     downloadedPaths.push(result.path);
     const text = (await readFile(result.path, 'utf8')).replace(/^\uFEFF/, '');
     const problem = text.trim() ? looksRight(text) : 'file is empty';
