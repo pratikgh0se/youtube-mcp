@@ -190,9 +190,10 @@ const DOWNLOAD_BACKOFF_MS = [5_000, 10_000, 15_000, 20_000, 30_000]; // the last
 
 /**
  * One youtube_download_caption call, retried with growing backoff on retriable 404s until `deadline` (epoch ms).
- * Records one result at the end. Quota: each attempt (including failed ones) may cost about 200 units.
+ * `maxAttempts` (default unlimited, bounded by the deadline) caps the number of calls. Records one result at the end.
+ * Quota: each attempt (including failed ones) may cost about 200 units.
  */
-async function downloadCaptionRetrying(args, deadline) {
+async function downloadCaptionRetrying(args, deadline, maxAttempts = Infinity) {
   const started = Date.now();
   const tool = 'youtube_download_caption';
   for (let attempt = 0; ; attempt += 1) {
@@ -203,7 +204,7 @@ async function downloadCaptionRetrying(args, deadline) {
       return value;
     } catch (error) {
       const wait = DOWNLOAD_BACKOFF_MS[Math.min(attempt, DOWNLOAD_BACKOFF_MS.length - 1)];
-      if (quotaAborted || !isCaptionNotReady(error) || Date.now() + wait >= deadline) {
+      if (quotaAborted || !isCaptionNotReady(error) || attempt + 1 >= maxAttempts || Date.now() + wait >= deadline) {
         record(tool, 'FAIL', Date.now() - started, `${error.code ?? 'error'}: ${error.message}${isCaptionNotReady(error) ? ` (still not ready after ${attempt + 1} attempts)` : ''}`);
         throw error;
       }
@@ -588,33 +589,46 @@ async function captionsGroup() {
   let downloaded = '';
   const downloadedPaths = [];
   addCleanup('downloaded caption files', async () => { await Promise.all(downloadedPaths.map((file) => rm(file, { force: true }))); });
-  // Quota: about 200 units per attempt, failed 404 attempts included; the deadline loop can spend several attempts.
+  // Quota: about 200 units per attempt, failed 404 attempts included. srt is the gate: with the 120s deadline and
+  // 5s/10s/15s/20s/30s backoff it makes at most 7 attempts (about 1,400 units) if YouTube never serves the caption,
+  // and then the other formats are skipped entirely.
   const deadline = Date.now() + 120_000;
+  let srtFailed = false;
   for (let attempt = 1; Date.now() < deadline; attempt += 1) {
     const fileName = `e2e-caption-download-${fileStamp}-${attempt}.srt`;
     const args = { videoId, captionId, fileName, format: 'srt' };
     // No preflight/approval. Ownership is verified server-side; the file lands in <state dir>/downloads/ and the tool returns its path.
-    const result = await downloadCaptionRetrying(args, deadline);
+    let result;
+    try {
+      result = await downloadCaptionRetrying(args, deadline);
+    } catch (error) {
+      if (quotaAborted || !isCaptionNotReady(error)) throw error;
+      srtFailed = true; // already recorded as FAIL by the helper
+      break;
+    }
     downloadedPaths.push(result.path);
     downloaded = await readFile(result.path, 'utf8');
     if (downloaded.includes(expected)) break;
     await sleep(10_000);
   }
-  if (!downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
+  if (!srtFailed && !downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
 
-  // Other formats of the same track. Quota: about 200 units per download attempt, so about 800 more for these four
-  // when each succeeds first time; every retried 404 attempt costs another 200.
+  // Other formats of the same track, only once srt succeeded. Quota: about 200 units per download attempt, so about
+  // 800 for these four when each succeeds first time; each format gets at most 3 attempts (backoff 5s, 10s), so the
+  // worst case is 4 x 3 x 200 = 2,400 units. Overall worst case: srt never ready about 1,400 units (formats skipped);
+  // srt ready about 200 x (up to 12 content-check rounds) = 2,400 plus 2,400 = about 4,800 units, well under 10,000.
   const formatChecks = {
     vtt: (t) => (t.startsWith('WEBVTT') ? undefined : 'does not start with WEBVTT'),
     ttml: (t) => (t.includes('<tt') ? undefined : 'no <tt element'),
     sbv: (t) => (/\b0:00:\d\d\.\d{3},\d+:\d\d:\d\d\.\d{3}/.test(t) ? undefined : 'no sbv-style 0:00:ss.mmm,h:mm:ss.mmm timestamps'),
     scc: (t) => (t.startsWith('Scenarist_SCC') ? undefined : 'does not start with Scenarist_SCC'),
   };
-  if (downloaded.includes('-->') && /\d,\d{3}/.test(downloaded)) record('youtube_download_caption', 'PASS', 0, 'srt has --> and comma milliseconds');
+  if (srtFailed) log('skipped: srt never became downloadable');
+  else if (downloaded.includes('-->') && /\d,\d{3}/.test(downloaded)) record('youtube_download_caption', 'PASS', 0, 'srt has --> and comma milliseconds');
   else record('youtube_download_caption', 'FAIL', 0, 'srt missing --> or comma milliseconds');
-  for (const [format, looksRight] of Object.entries(formatChecks)) {
+  for (const [format, looksRight] of srtFailed ? [] : Object.entries(formatChecks)) {
     const fileName = `e2e-caption-download-${fileStamp}-fmt.${format}`;
-    const result = await downloadCaptionRetrying({ videoId, captionId, fileName, format }, Date.now() + 120_000);
+    const result = await downloadCaptionRetrying({ videoId, captionId, fileName, format }, Date.now() + 120_000, 3);
     downloadedPaths.push(result.path);
     const text = (await readFile(result.path, 'utf8')).replace(/^\uFEFF/, '');
     const problem = text.trim() ? looksRight(text) : 'file is empty';
