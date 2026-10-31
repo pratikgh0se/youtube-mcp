@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "youtube-mcp",
   "display_name": "YouTube MCP",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Changes to your channel and content are previewed and need your approval first; viewer actions need explicit confirmation.",
   "author": {
     "name": "Pratik Ghose",

@@ -180,6 +180,41 @@ async function step(tool, args, { check, blocked, timeout, attempts = 1, delayMs
   throw lastError;
 }
 
+/**
+ * YouTube needs a while (observed: more than 17s) to reprocess an updated caption, and a download in that window fails
+ * with 404 captionNotFound. Only that failure is retriable here; every other error fails fast.
+ */
+const isCaptionNotReady = (error) => error.reason === 'captionNotFound' || /captionNotFound/.test(error.message ?? '')
+  || (error.code === 'provider_error' && (error.status === 404 || /\b404\b/.test(error.message ?? '')));
+const DOWNLOAD_BACKOFF_MS = [5_000, 10_000, 15_000, 20_000, 30_000]; // the last value repeats until the deadline
+
+/**
+ * One youtube_download_caption call, retried with growing backoff on retriable 404s until `deadline` (epoch ms).
+ * `maxAttempts` (default unlimited, bounded by the deadline) caps the number of calls. Records one result at the end.
+ * `label` (for example the format) prefixes the note of the recorded result as "label: ...".
+ * Quota: each attempt (including failed ones) may cost about 200 units.
+ */
+async function downloadCaptionRetrying(args, deadline, maxAttempts = Infinity, label = '') {
+  const started = Date.now();
+  const tool = 'youtube_download_caption';
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await call(tool, args);
+      if (!(typeof value.path === 'string' && value.path.endsWith(args.fileName))) throw new E2EError('unexpected response: no path returned', 'unexpected_response', tool);
+      record(tool, 'PASS', Date.now() - started, label ? `${label} downloaded` : undefined);
+      return value;
+    } catch (error) {
+      const wait = DOWNLOAD_BACKOFF_MS[Math.min(attempt, DOWNLOAD_BACKOFF_MS.length - 1)];
+      if (quotaAborted || !isCaptionNotReady(error) || attempt + 1 >= maxAttempts || Date.now() + wait >= deadline) {
+        record(tool, 'FAIL', Date.now() - started, `${label ? `${label}: ` : ''}${error.code ?? 'error'}: ${error.message}${isCaptionNotReady(error) ? ` (still not ready after ${attempt + 1} attempts)` : ''}`);
+        throw error;
+      }
+      log(`download not ready (${error.reason ?? error.code}); retry ${attempt + 1} in ${wait / 1000}s`);
+      await sleep(wait);
+    }
+  }
+}
+
 /** Calls a tool that must refuse with a specific error code; records PASS-GUARD. */
 async function guard(tool, args, expectedCode, why) {
   const started = Date.now();
@@ -517,7 +552,15 @@ async function captionsGroup() {
   await writeFile(second, srt(marker));
   const meta = { videoId, mimeType: 'application/octet-stream', language: 'en', name: 'youtube-mcp e2e' };
 
-  const knownCaptionIds = new Set(((await call('youtube_list_caption_tracks', { videoId })).items ?? []).map((track) => track.id));
+  // The reuse video may hold a track left by an aborted earlier run, which would make the upload fail with 409 captionExists.
+  // Remove only tracks this harness creates: exactly its own track name AND language. Never touch any other track.
+  const existingTracks = (await call('youtube_list_caption_tracks', { videoId })).items ?? [];
+  const staleTracks = existingTracks.filter((track) => track.name === meta.name && track.language === meta.language);
+  for (const stale of staleTracks) {
+    log(`removing stale harness caption track ${stale.id} (name "${stale.name}", language ${stale.language}) from a previous run`);
+    await deleteCaptionQuiet(videoId, stale.id).catch((error) => cleanupFailures.push(`stale caption ${stale.id}: ${error.message}`));
+  }
+  const knownCaptionIds = new Set(existingTracks.filter((track) => !staleTracks.includes(track)).map((track) => track.id));
   const captionId = (await approved({
     reconcile: async () => {
       const found = ((await call('youtube_list_caption_tracks', { videoId })).items ?? []).find((track) => !knownCaptionIds.has(track.id) && track.name === meta.name);
@@ -547,18 +590,67 @@ async function captionsGroup() {
   let downloaded = '';
   const downloadedPaths = [];
   addCleanup('downloaded caption files', async () => { await Promise.all(downloadedPaths.map((file) => rm(file, { force: true }))); });
+  // Quota: about 200 units per attempt, failed 404 attempts included. srt is the gate: with the 120s deadline and
+  // 5s/10s/15s/20s/30s backoff it makes at most 7 attempts (about 1,400 units) if YouTube never serves the caption,
+  // and then the other formats are skipped entirely.
   const deadline = Date.now() + 120_000;
+  let srtFailed = false;
   for (let attempt = 1; Date.now() < deadline; attempt += 1) {
     const fileName = `e2e-caption-download-${fileStamp}-${attempt}.srt`;
     const args = { videoId, captionId, fileName, format: 'srt' };
     // No preflight/approval. Ownership is verified server-side; the file lands in <state dir>/downloads/ and the tool returns its path.
-    const result = await step('youtube_download_caption', args, { attempts: 3, delayMs: 5_000, check: (v) => (typeof v.path === 'string' && v.path.endsWith(fileName) ? undefined : 'no path returned') });
+    let result;
+    try {
+      result = await downloadCaptionRetrying(args, deadline);
+    } catch (error) {
+      if (quotaAborted || !isCaptionNotReady(error)) throw error;
+      srtFailed = true; // already recorded as FAIL by the helper
+      break;
+    }
     downloadedPaths.push(result.path);
     downloaded = await readFile(result.path, 'utf8');
     if (downloaded.includes(expected)) break;
     await sleep(10_000);
   }
-  if (!downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
+  if (!srtFailed && !downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
+
+  // Other formats of the same track, only once srt succeeded. YouTube's tfmt conversion lags behind srt after a
+  // caption update, so wait 60s once first (no quota). Quota: about 200 units per download attempt, so about 600 for
+  // these three when each succeeds first time; each format gets at most 4 attempts (backoff 5s, 10s, 15s) within a 90s
+  // deadline, so the worst case is 3 x 4 x 200 = 2,400 units. Overall worst case: srt never ready about 1,400 units
+  // (formats skipped); srt ready about 200 x (up to 12 content-check rounds) = 2,400 plus 2,400 = about 4,800 units,
+  // well under 10,000.
+  const formatChecks = {
+    vtt: (t) => (t.startsWith('WEBVTT') ? undefined : 'does not start with WEBVTT'),
+    ttml: (t) => (t.includes('<tt') ? undefined : 'no <tt element'),
+    sbv: (t) => (/\b0:00:\d\d\.\d{3},\d+:\d\d:\d\d\.\d{3}/.test(t) ? undefined : 'no sbv-style 0:00:ss.mmm,h:mm:ss.mmm timestamps'),
+  };
+  if (srtFailed) log('skipped: srt never became downloadable');
+  else if (downloaded.includes('-->') && /\d,\d{3}/.test(downloaded)) record('youtube_download_caption', 'PASS', 0, 'srt has --> and comma milliseconds');
+  else record('youtube_download_caption', 'FAIL', 0, 'srt missing --> or comma milliseconds');
+  if (!srtFailed) {
+    log('waiting 60s for YouTube to convert the other caption formats');
+    await sleep(60_000);
+  }
+  const failedFormats = [];
+  for (const [format, looksRight] of srtFailed ? [] : Object.entries(formatChecks)) {
+    const fileName = `e2e-caption-download-${fileStamp}-fmt.${format}`;
+    let result;
+    try {
+      result = await downloadCaptionRetrying({ videoId, captionId, fileName, format }, Date.now() + 90_000, 4, format);
+    } catch (error) {
+      if (quotaAborted || !isCaptionNotReady(error)) throw error;
+      failedFormats.push(format); // already recorded as FAIL (note starts with the format) by the helper
+      continue;
+    }
+    downloadedPaths.push(result.path);
+    const text = (await readFile(result.path, 'utf8')).replace(/^\uFEFF/, '');
+    const problem = text.trim() ? looksRight(text) : 'file is empty';
+    record('youtube_download_caption', problem ? 'FAIL' : 'PASS', 0, problem ? `${format}: ${problem}` : `${format} looks like ${format}`);
+    if (problem) failedFormats.push(format);
+  }
+  // Stop before the delete step so the gate fails; the end-of-run cleanup still deletes the harness's own track.
+  if (failedFormats.length) throw new E2EError(`caption formats failed: ${failedFormats.join(', ')}`, 'caption_formats_failed', 'youtube_download_caption');
 
   await approved({
     pre: 'youtube_preflight_caption_delete', preArgs: { videoId, captionId }, approve: 'youtube_approve',

@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.0/youtube-mcp-0.3.0.tgz",
+        "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.1/youtube-mcp-0.3.1.tgz",
         "--transport",
         "stdio"
       ],
