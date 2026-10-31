@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - parameter descriptions for every tool input, so clients show what each argument means (no behaviour change)
 
 ### Changed
-- `youtube_download_caption` supports the `sbv` and `scc` formats (alongside `srt`, `ttml` and `vtt`); `fileName` must end in the extension that matches `format` (for example `.sbv` for `sbv`), and `.txt` is no longer accepted. Without `format` (the track's original format), any of `.srt`, `.ttml`, `.vtt`, `.sbv` or `.scc` is allowed.
+- `youtube_download_caption` supports the `sbv` format (alongside `srt`, `ttml` and `vtt`); `fileName` must end in the extension that matches `format` (for example `.sbv` for `sbv`), and `.txt` is no longer accepted. Without `format` (the track's original format), any of `.srt`, `.ttml`, `.vtt`, `.sbv` is allowed.
 
 ## [0.3.0]
 

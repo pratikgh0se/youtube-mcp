@@ -37,7 +37,7 @@ export type ArchiveVideoInput = { videoId: string; approvalId?: string; confirm?
 export type ThumbnailInput = { videoId: string; filePath: string; mimeType: 'image/jpeg' | 'image/png'; approvalId?: string; confirm?: boolean };
 export type CaptionUploadInput = { videoId: string; filePath: string; mimeType: CaptionMimeType; language: string; name: string; isDraft?: boolean; approvalId?: string; confirm?: boolean };
 export type CaptionUpdateInput = CaptionUploadInput & { captionId: string };
-export type CaptionDownloadInput = { videoId: string; captionId: string; fileName: string; format?: 'srt' | 'ttml' | 'vtt' | 'sbv' | 'scc' };
+export type CaptionDownloadInput = { videoId: string; captionId: string; fileName: string; format?: 'srt' | 'ttml' | 'vtt' | 'sbv' };
 export type CaptionDeleteInput = { videoId: string; captionId: string; approvalId?: string; confirm?: boolean };
 export type CaptionMimeType = 'application/octet-stream' | 'application/ttml+xml' | 'text/plain' | 'text/vtt';
 
@@ -493,7 +493,7 @@ async function withValidatedLocalFile<T>(
   }
 }
 
-const captionExtensions = ['.srt', '.ttml', '.vtt', '.sbv', '.scc'];
+const captionExtensions = ['.srt', '.ttml', '.vtt', '.sbv'];
 
 /**
  * Accepts a bare file name only: no separators, no leading dot. With `format` the extension must equal it;
@@ -502,7 +502,7 @@ const captionExtensions = ['.srt', '.ttml', '.vtt', '.sbv', '.scc'];
 export function sanitizeCaptionFileName(name: string, format?: string): string {
   const lower = name.toLowerCase();
   if (!name || name.length > 120 || name !== basename(name) || /[\\/\0]/.test(name) || name.startsWith('.') || !captionExtensions.some((ext) => lower.endsWith(ext)) || name === '..') {
-    throw new AppError('invalid_input', 'fileName must be a plain file name ending in .srt, .ttml, .vtt, .sbv or .scc, with no directory parts.', 'Pass only a file name such as captions.vtt; files are written to the downloads folder in the state directory.', false);
+    throw new AppError('invalid_input', 'fileName must be a plain file name ending in .srt, .ttml, .vtt, .sbv, with no directory parts.', 'Pass only a file name such as captions.vtt; files are written to the downloads folder in the state directory.', false);
   }
   if (format && !lower.endsWith(`.${format}`)) {
     throw new AppError('invalid_input', `fileName must end in .${format} to match format "${format}".`, `Rename the file to end in .${format}, or change format to match the extension.`, false);

@@ -615,16 +615,15 @@ async function captionsGroup() {
   if (!srtFailed && !downloaded.includes(expected)) record('youtube_download_caption', 'FAIL', 0, 'downloaded caption never contained the expected text');
 
   // Other formats of the same track, only once srt succeeded. YouTube's tfmt conversion lags behind srt after a
-  // caption update, so wait 60s once first (no quota). Quota: about 200 units per download attempt, so about 800 for
-  // these four when each succeeds first time; each format gets at most 4 attempts (backoff 5s, 10s, 15s) within a 90s
-  // deadline, so the worst case is 4 x 4 x 200 = 3,200 units. Overall worst case: srt never ready about 1,400 units
-  // (formats skipped); srt ready about 200 x (up to 12 content-check rounds) = 2,400 plus 3,200 = about 5,600 units,
+  // caption update, so wait 60s once first (no quota). Quota: about 200 units per download attempt, so about 600 for
+  // these three when each succeeds first time; each format gets at most 4 attempts (backoff 5s, 10s, 15s) within a 90s
+  // deadline, so the worst case is 3 x 4 x 200 = 2,400 units. Overall worst case: srt never ready about 1,400 units
+  // (formats skipped); srt ready about 200 x (up to 12 content-check rounds) = 2,400 plus 2,400 = about 4,800 units,
   // well under 10,000.
   const formatChecks = {
     vtt: (t) => (t.startsWith('WEBVTT') ? undefined : 'does not start with WEBVTT'),
     ttml: (t) => (t.includes('<tt') ? undefined : 'no <tt element'),
     sbv: (t) => (/\b0:00:\d\d\.\d{3},\d+:\d\d:\d\d\.\d{3}/.test(t) ? undefined : 'no sbv-style 0:00:ss.mmm,h:mm:ss.mmm timestamps'),
-    scc: (t) => (t.startsWith('Scenarist_SCC') ? undefined : 'does not start with Scenarist_SCC'),
   };
   if (srtFailed) log('skipped: srt never became downloadable');
   else if (downloaded.includes('-->') && /\d,\d{3}/.test(downloaded)) record('youtube_download_caption', 'PASS', 0, 'srt has --> and comma milliseconds');

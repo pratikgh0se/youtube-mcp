@@ -124,7 +124,7 @@ export const preflightCaptionUploadSchema = z.object(captionUploadFields);
 export const uploadCaptionSchema = preflightCaptionUploadSchema.extend({ approvalId: approvalOf('youtube_preflight_caption_upload'), confirm: confirmExecute });
 export const preflightCaptionUpdateSchema = z.object({ ...captionUploadFields, captionId });
 export const updateCaptionSchema = preflightCaptionUpdateSchema.extend({ approvalId: approvalOf('youtube_preflight_caption_update'), confirm: confirmExecute });
-export const downloadCaptionSchema = z.object({ videoId, captionId, fileName: z.string().min(1).max(120).describe('Plain new file name (no path) to write under <state dir>/downloads/; existing files are never overwritten.'), format: z.enum(['srt', 'ttml', 'vtt', 'sbv', 'scc']).optional().describe('Caption format to convert to: srt, ttml, vtt, sbv or scc. The fileName extension must match it. Omit for the track original.') });
+export const downloadCaptionSchema = z.object({ videoId, captionId, fileName: z.string().min(1).max(120).describe('Plain new file name (no path) to write under <state dir>/downloads/; existing files are never overwritten.'), format: z.enum(['srt', 'ttml', 'vtt', 'sbv']).optional().describe('Caption format to convert to: srt, ttml, vtt, sbv. The fileName extension must match it. Omit for the track original.') });
 export const preflightCaptionDeleteSchema = z.object({ videoId, captionId });
 export const deleteCaptionSchema = preflightCaptionDeleteSchema.extend({ approvalId: approvalOf('youtube_preflight_caption_delete'), confirm: confirmExecute });
 
