@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -13,7 +13,6 @@ const LAUNCH_PREFIX = ['npx', '-y', TARBALL];
 const MANIFESTS = [
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
-  '.mcp.json',
   'gemini-extension.json',
 ] as const;
 
@@ -33,6 +32,13 @@ describe('install manifests', () => {
     await expect(load(path)).resolves.toBeTypeOf('object');
   });
 
+  it('plugin.json declares mcpServers inline and root .mcp.json does not exist', async () => {
+    const plugin = (await load('.claude-plugin/plugin.json')) as { mcpServers?: Record<string, Server> };
+    expect(typeof plugin.mcpServers).toBe('object');
+    expect(Object.keys(plugin.mcpServers ?? {})).toEqual(['youtube-mcp']);
+    expect(existsSync('.mcp.json'), '.mcp.json must not exist at the repo root').toBe(false);
+  });
+
   it('every manifest version equals the package.json version', async () => {
     const { version } = (await load('package.json')) as { version: string };
     const plugin = (await load('.claude-plugin/plugin.json')) as { version: string };
@@ -47,7 +53,7 @@ describe('install manifests', () => {
   });
 
   it('every launch command is npx -y <release tarball URL> over stdio', async () => {
-    const claude = (await load('.mcp.json')) as { mcpServers: Record<string, Server> };
+    const claude = (await load('.claude-plugin/plugin.json')) as { mcpServers: Record<string, Server> };
     const gemini = (await load('gemini-extension.json')) as { mcpServers: Record<string, Server> };
 
     for (const servers of [claude.mcpServers, gemini.mcpServers]) {
@@ -67,9 +73,9 @@ describe('install manifests', () => {
     expect(marketplace.plugins[0]).toMatchObject({ name: plugin.name, source: './' });
   });
 
-  it('plugin.json userConfig covers every env var that .mcp.json substitutes', async () => {
+  it('plugin.json userConfig covers every env var that its mcpServers entry substitutes', async () => {
     const plugin = (await load('.claude-plugin/plugin.json')) as { userConfig: Record<string, { sensitive?: boolean }> };
-    const claude = (await load('.mcp.json')) as { mcpServers: Record<string, { env: Record<string, string> }> };
+    const claude = (await load('.claude-plugin/plugin.json')) as { mcpServers: Record<string, { env: Record<string, string> }> };
     const env = claude.mcpServers['youtube-mcp']!.env;
 
     for (const [name, value] of Object.entries(env)) {

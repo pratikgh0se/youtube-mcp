@@ -16,10 +16,12 @@ export function loadProjectEnvFile(projectDirectory: string): boolean {
   }
 }
 
-/** Reads an environment variable, treating an empty string as unset (plugin and extension hosts pass "" for blank optional settings). */
+const UNRESOLVED_PLACEHOLDER = /^\$\{[^}]*\}$/;
+
+/** Reads an environment variable, treating an empty string as unset (plugin and extension hosts pass "" for blank optional settings). A value that is entirely an unresolved placeholder such as `${user_config.X}` also counts as unset: hosts that load the plugin `.mcp.json`-style config outside the plugin never substitute it. */
 export function readEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const value = env[name];
-  return value === undefined || value === '' ? undefined : value;
+  return value === undefined || value === '' || UNRESOLVED_PLACEHOLDER.test(value) ? undefined : value;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv, homeDir: string): AppConfig {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { loadConfig, loadProjectEnvFile } from '../src/config.js';
+import { loadConfig, loadProjectEnvFile, readEnv } from '../src/config.js';
 
 describe('loadConfig', () => {
   it('loads a project .env without replacing an explicitly supplied environment variable', () => {
@@ -109,6 +109,48 @@ describe('loadConfig', () => {
       profileId: 'creator-main',
       channelId: 'UC123',
       stateDir: '/var/lib/youtube-mcp',
+    });
+  });
+  describe('unresolved placeholders', () => {
+    it.each(['${user_config.YOUTUBE_API_KEY}', '${FOO}'])('readEnv treats %s as unset', (value) => {
+      expect(readEnv({ X: value }, 'X')).toBeUndefined();
+      expect(readEnv({ X: '' }, 'X')).toBeUndefined();
+      expect(readEnv({}, 'X')).toBeUndefined();
+    });
+
+    it.each(['abc${def}', '${a}b', 'fake-key'])('readEnv keeps %s', (value) => {
+      expect(readEnv({ X: value }, 'X')).toBe(value);
+    });
+
+    it('treats every variable that is a full placeholder as unset', () => {
+      const config = loadConfig(
+        {
+          YOUTUBE_API_KEY: '${user_config.YOUTUBE_API_KEY}',
+          YOUTUBE_OAUTH_CLIENT_SECRET_FILE: '${user_config.YOUTUBE_OAUTH_CLIENT_SECRET_FILE}',
+          YOUTUBE_MCP_PROFILE_ID: '${user_config.YOUTUBE_MCP_PROFILE_ID}',
+          YOUTUBE_MCP_CHANNEL_ID: '${user_config.YOUTUBE_MCP_CHANNEL_ID}',
+          YOUTUBE_MCP_STATE_DIR: '${user_config.YOUTUBE_MCP_STATE_DIR}',
+        },
+        '/Users/tester',
+      );
+
+      expect(config.apiKey).toBeUndefined();
+      expect(config.oauthClientSecretFile).toBeUndefined();
+      expect(config.profileId).toBeUndefined();
+      expect(config.channelId).toBeUndefined();
+      expect(config.stateDir).toBe('/Users/tester/.youtube-mcp');
+      expect(config.diagnostics()).toContain('apiKey=missing');
+    });
+
+    it('keeps values that merely contain a placeholder', () => {
+      const config = loadConfig(
+        { YOUTUBE_API_KEY: 'abc${def}', YOUTUBE_MCP_PROFILE_ID: '${a}b', YOUTUBE_MCP_STATE_DIR: '/var/${x}/state' },
+        '/Users/tester',
+      );
+
+      expect(config.apiKey).toBe('abc${def}');
+      expect(config.profileId).toBe('${a}b');
+      expect(config.stateDir).toBe('/var/${x}/state');
     });
   });
 });

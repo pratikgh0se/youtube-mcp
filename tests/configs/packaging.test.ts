@@ -339,8 +339,18 @@ describe('C2 configs/ directory', () => {
 });
 
 describe('C1/C2 manifests with a server entry', () => {
-  it.each(['.mcp.json', 'gemini-extension.json'])('%s holds one canonical npx server entry', (file) => {
-    expectCanonical(file, singleEntry(file, readJson(file)));
+  it('gemini-extension.json holds one canonical npx server entry', () => {
+    expectCanonical('gemini-extension.json', singleEntry('gemini-extension.json', readJson('gemini-extension.json')));
+  });
+
+  it('plugin.json mcpServers holds one canonical npx server entry', () => {
+    const plugin = readJson('.claude-plugin/plugin.json');
+    expect(plugin.mcpServers, 'plugin.json must declare mcpServers inline').toBeDefined();
+    expectCanonical('.claude-plugin/plugin.json mcpServers', singleEntry('.claude-plugin/plugin.json mcpServers', plugin.mcpServers as Obj));
+  });
+
+  it('root .mcp.json does not exist (it would also load as project config)', () => {
+    expect(existsSync('.mcp.json'), '.mcp.json must not exist at the repo root').toBe(false);
   });
 });
 
@@ -373,10 +383,15 @@ describe('C1 bundled and remote launches resolve to one bin file', () => {
 // C3: environment variables and secrets
 // ---------------------------------------------------------------------------
 describe('C3 environment variables', () => {
-  const serverFiles = ['.mcp.json', 'gemini-extension.json', ...configFiles.map((f) => `configs/${f}`)];
+  const serverFiles = ['gemini-extension.json', ...configFiles.map((f) => `configs/${f}`)];
 
   it.each(serverFiles)('%s server entry only uses the five allowed env names', (file) => {
     expectEnvSubset(file, singleEntry(file, parseByExtension(file)));
+  });
+
+  it('plugin.json mcpServers entry only uses the five allowed env names', () => {
+    const plugin = readJson('.claude-plugin/plugin.json');
+    expectEnvSubset('.claude-plugin/plugin.json mcpServers', singleEntry('.claude-plugin/plugin.json mcpServers', plugin.mcpServers as Obj));
   });
 
   it('plugin.json userConfig covers all five, API key sensitive', () => {
@@ -415,7 +430,6 @@ describe('C3 environment variables', () => {
   it('no packaging file contains a real-looking secret', () => {
     const files = [
       ...listFiles('configs'),
-      ...listFiles('.mcp.json'),
       ...listFiles('.claude-plugin'),
       ...listFiles('gemini-extension.json'),
       ...listFiles('mcpb').filter((f) => !/\.(mcpb|zip|png|jpe?g|gif|ico)$/i.test(f)),
