@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.2]
+
+### Fixed
+- Claude Code plugin: the server definition moved from the root `.mcp.json` into `.claude-plugin/plugin.json`, so opening this repo as a project no longer loads it with unsubstituted `${user_config.*}` values.
+- Environment values that are entirely an unresolved `${...}` placeholder now count as unset, so status no longer reports a placeholder as a configured API key.
+
 ## [0.3.1]
 
 ### Added

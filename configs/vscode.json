@@ -13,7 +13,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.1/youtube-mcp-0.3.1.tgz",
+        "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz",
         "--transport",
         "stdio"
       ],
