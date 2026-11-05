@@ -57,11 +57,12 @@ export class ProfileCurationService {
   }
 
   async reset(input: { confirm?: boolean; includeWatchEvents?: boolean; watchedFrom?: string; watchedTo?: string }): Promise<CurationResetResult> {
+    const watchEvents = watchEventRange(input);
     if (input.confirm !== true) {
-      throw new AppError('confirmation_required', 'Resetting curation data deletes local policy and queues.', 'Repeat with confirm: true.', false);
+      const preview = watchEvents ? ` Imported watch events will also be permanently deleted for every profile sharing this state directory: ${describeRange(input)}. This cannot be undone.` : '';
+      throw new AppError('confirmation_required', `Resetting curation data deletes local policy and queues.${preview}`, 'Repeat with confirm: true.', false);
     }
-    const profileId = this.selectedProfileId();
-    return this.store.reset(profileId, watchEventRange(input));
+    return this.store.reset(this.selectedProfileId(), watchEvents);
   }
 
   private selectedProfileId(): string {
@@ -109,4 +110,11 @@ function watchEventRange(input: { includeWatchEvents?: boolean; watchedFrom?: st
     if (watchedTo !== undefined) range.endExclusive = bounds.endExclusive;
   }
   return range;
+}
+
+function describeRange(input: { watchedFrom?: string; watchedTo?: string }): string {
+  const { watchedFrom, watchedTo } = input;
+  if (watchedFrom === undefined && watchedTo === undefined) return 'all watch history';
+  if (watchedFrom !== undefined && watchedTo !== undefined) return `watch events from ${watchedFrom} through ${watchedTo} (inclusive)`;
+  return watchedFrom !== undefined ? `watch events from ${watchedFrom} onward (inclusive)` : `watch events up to and including ${watchedTo}`;
 }
