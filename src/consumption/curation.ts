@@ -1,6 +1,8 @@
 import { AppError } from '../errors.js';
 import type { ConsumptionQueue, ConsumptionQueueItem, CurationCandidate, CurationPolicy, CurationResetResult } from './curation-store.js';
 import { CurationStore } from './curation-store.js';
+import type { WatchEventDeleteRange } from './curation-store.js';
+import { dateBounds } from './store.js';
 
 export type QueueProposal = {
   profileId: string;
@@ -54,11 +56,12 @@ export class ProfileCurationService {
     return this.curation.propose({ ...input, profileId: this.selectedProfileId() });
   }
 
-  async reset(input: { confirm?: boolean }): Promise<CurationResetResult> {
+  async reset(input: { confirm?: boolean; includeWatchEvents?: boolean; watchedFrom?: string; watchedTo?: string }): Promise<CurationResetResult> {
     if (input.confirm !== true) {
       throw new AppError('confirmation_required', 'Resetting curation data deletes local policy and queues.', 'Repeat with confirm: true.', false);
     }
-    return this.store.reset(this.selectedProfileId());
+    const profileId = this.selectedProfileId();
+    return this.store.reset(profileId, watchEventRange(input));
   }
 
   private selectedProfileId(): string {
@@ -87,4 +90,23 @@ function selectItems(candidates: CurationCandidate[], policy: CurationPolicy, mi
     remaining -= estimatedMinutes;
   }
   return items;
+}
+
+/** Validates the reset options before anything is deleted; returns undefined when watch events are kept. */
+function watchEventRange(input: { includeWatchEvents?: boolean; watchedFrom?: string; watchedTo?: string }): WatchEventDeleteRange | undefined {
+  const { includeWatchEvents, watchedFrom, watchedTo } = input;
+  if (includeWatchEvents !== true) {
+    if (watchedFrom !== undefined || watchedTo !== undefined) {
+      throw new AppError('invalid_reset_options', 'watchedFrom and watchedTo only apply when includeWatchEvents is true.', 'Set includeWatchEvents: true or remove the dates.', false);
+    }
+    return undefined;
+  }
+  const range: WatchEventDeleteRange = {};
+  if (watchedFrom !== undefined || watchedTo !== undefined) {
+    // dateBounds validates both dates and their order; a single date reuses itself as the other bound.
+    const bounds = dateBounds({ startDate: watchedFrom ?? watchedTo!, endDate: watchedTo ?? watchedFrom! });
+    if (watchedFrom !== undefined) range.start = bounds.start;
+    if (watchedTo !== undefined) range.endExclusive = bounds.endExclusive;
+  }
+  return range;
 }

@@ -241,7 +241,7 @@ export function createMcpServer(dependencies: McpDependencies): McpServer {
   server.registerTool('youtube_save_curation_policy', writeTool('Save selected-profile local curation allowlists and API-data retention.', curationPolicySchema), (input) => resultOf(() => dependencies.curation.savePolicy(input)));
   server.registerTool('youtube_save_curation_candidate', writeTool('Save a selected-profile local curation candidate with source provenance.', curationCandidateSchema), (input) => resultOf(() => dependencies.curation.saveCandidate(input)));
   server.registerTool('youtube_propose_consumption_queue', writeTool('Create a finite selected-profile local consumption queue.', proposeConsumptionQueueSchema), (input) => resultOf(() => dependencies.curation.propose(input)));
-  server.registerTool('youtube_reset_consumption_data', writeTool('Delete selected-profile local curation policy, candidates, and queues.', resetConsumptionDataSchema), (input) => resultOf(() => dependencies.curation.reset(input)));
+  server.registerTool('youtube_reset_consumption_data', writeTool('Delete selected-profile local curation policy, candidates, and queues. Imported watch events are kept unless includeWatchEvents is true, which also deletes them (optionally limited by watchedFrom/watchedTo, inclusive YYYY-MM-DD days). This cannot be undone, and with no dates it removes all local watch history.', resetConsumptionDataSchema), (input) => resultOf(() => dependencies.curation.reset(input)));
 
   server.registerTool('youtube_auth_status', readTool('Report safe local YouTube authorization readiness.', emptySchema), () => resultOf(() => dependencies.auth.status()));
   return server;

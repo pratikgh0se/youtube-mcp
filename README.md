@@ -326,7 +326,7 @@ This binds to `127.0.0.1` only. Do not expose it to the internet.
 | Playlists (12) | `youtube_preflight_create_playlist`, `youtube_create_playlist`, `youtube_preflight_update_playlist`, `youtube_update_playlist`, `youtube_preflight_delete_playlist`, `youtube_delete_playlist`, `youtube_preflight_add_playlist_item`, `youtube_add_playlist_item`, `youtube_preflight_remove_playlist_item`, `youtube_remove_playlist_item`, `youtube_preflight_reorder_playlist_item`, `youtube_reorder_playlist_item` |
 | Comments and moderation (6) | `youtube_preflight_reply_to_comment`, `youtube_reply_to_comment`, `youtube_preflight_set_comment_moderation_status`, `youtube_set_comment_moderation_status`, `youtube_preflight_delete_comment`, `youtube_delete_comment` |
 | Approval (1) | `youtube_approve`: approves any pending preview by `approvalId` and shows its kind, target and exact change |
-| Local viewing analysis (7) | `youtube_import_takeout`, `youtube_consumption_profile`, `youtube_consumption_trends`, `youtube_save_curation_policy`, `youtube_save_curation_candidate`, `youtube_propose_consumption_queue`, `youtube_reset_consumption_data` |
+| Local viewing analysis (7) | `youtube_import_takeout`, `youtube_consumption_profile`, `youtube_consumption_trends`, `youtube_save_curation_policy`, `youtube_save_curation_candidate`, `youtube_propose_consumption_queue`, `youtube_reset_consumption_data` (watch events are kept unless `includeWatchEvents` is set; irreversible) |
 | Status (1) | `youtube_auth_status` |
 
 ## Privacy and security
