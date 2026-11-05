@@ -3,6 +3,8 @@
 **A local-first MCP server that lets AI assistants search YouTube, manage your channel and read your analytics, and asks you to approve changes to your channel and content first.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+[![CI](https://github.com/pratikgh0se/youtube-mcp/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/pratikgh0se/youtube-mcp/actions/workflows/verify.yml)
+[![Latest release](https://img.shields.io/github/v/release/pratikgh0se/youtube-mcp)](https://github.com/pratikgh0se/youtube-mcp/releases/latest)
 ![Node.js >=22.13](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)
 ![MCP server](https://img.shields.io/badge/MCP-server-blue.svg)
 
