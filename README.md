@@ -232,7 +232,7 @@ YOUTUBE_MCP_PROFILE_ID=creator-main \
 npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz youtube-auth
 ```
 
-This opens a browser for Google consent on a local `127.0.0.1` callback and requests the `youtube`, `youtube.force-ssl` and `yt-analytics.readonly` scopes. The token is stored under `~/.youtube-mcp` for that profile, and later calls refresh it silently. Run it again if you revoke access.
+This opens a browser for Google consent on a local `127.0.0.1` callback and requests the `youtube`, `youtube.force-ssl` and `yt-analytics.readonly` scopes. The token is stored under `~/.youtube-mcp` for that profile, and later calls refresh it silently. Run it again if you revoke access or the sign-in expires: it checks the stored sign-in with Google and only opens the browser when it no longer works. Add `--force` (`youtube-auth --force`) to always sign in again.
 
 ## Google credentials
 

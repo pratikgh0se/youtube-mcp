@@ -42,6 +42,8 @@ YOUTUBE_MCP_PROFILE_ID=creator-main \
 npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz youtube-auth
 ```
 
+Re-running `youtube-auth` recovers an expired sign-in; add `--force` to always re-authorize.
+
 ### Which config file
 
 | Client | File in `configs/` |

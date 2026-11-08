@@ -95,7 +95,7 @@ export class OAuthService {
     private readonly client: OAuthClient = createDesktopOAuthClient(config),
   ) {}
 
-  async authorize(): Promise<AuthStatus> {
+  async authorize(options: { force?: boolean } = {}): Promise<AuthStatus> {
     if (!this.config.oauthClientSecretFile) {
       return {
         configured: false,
@@ -107,7 +107,8 @@ export class OAuthService {
     }
 
     const storedToken = await this.readStoredToken(false);
-    if (storedToken && hasRequestedServerCapabilities(storedToken.scopes)) {
+    if (!options.force && storedToken && hasRequestedServerCapabilities(storedToken.scopes)
+      && await this.refreshTokenStillWorks(storedToken.refreshToken)) {
       return authorizedStatus(storedToken.scopes);
     }
 
@@ -115,6 +116,24 @@ export class OAuthService {
       return await this.completeAuthorization(await this.client.authorize());
     } catch (error) {
       throw toSafeError(error);
+    }
+  }
+
+  /** True when Google accepts the refresh token, false when it is dead. Throws a safe error when Google cannot be reached. */
+  private async refreshTokenStillWorks(refreshToken: string): Promise<boolean> {
+    try {
+      return Boolean((await this.client.refreshAccessToken(refreshToken)).access_token);
+    } catch (error) {
+      const safe = toSafeError(error);
+      if (safe.code === 'reauthorization_required') {
+        return false;
+      }
+      throw new AppError(
+        'provider_error',
+        'Could not reach Google to verify the stored sign-in. The stored sign-in was not changed.',
+        'Check your connection and run youtube-auth again.',
+        true,
+      );
     }
   }
 

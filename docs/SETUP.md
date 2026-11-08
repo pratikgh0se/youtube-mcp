@@ -124,6 +124,8 @@ What you will see:
 3. A permissions page. **Tick all the permissions** and click **Continue**. If you leave any unticked, some tools will ask you to sign in again.
 4. The terminal prints a line like `{"authorized":true, ...}`. That is success. You can close the browser tab.
 
+Re-running `youtube-auth` recovers an expired or revoked sign-in: it checks the stored sign-in with Google and opens the browser only if it no longer works. Add `--force` to always sign in again.
+
 The server asks for three permissions: manage your YouTube account (`youtube`), see, edit and delete your YouTube videos, ratings, comments and captions (`youtube.force-ssl`), and view your YouTube Analytics reports (`yt-analytics.readonly`). The sign-in uses a temporary local address on `127.0.0.1` to receive Google's reply.
 
 **Where the token goes:** under `~/.youtube-mcp/profiles/<profile name>/oauth-token.json`, readable only by you. Set `YOUTUBE_MCP_STATE_DIR` to change the base folder.

@@ -36,6 +36,8 @@ import type { AppConfig } from './types.js';
 // Must run before node:sqlite is first loaded (it is loaded lazily, in main()).
 suppressSqliteExperimentalWarning();
 
+const usage = 'Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth [--force]';
+
 async function main(arguments_: string[]): Promise<void> {
   if (arguments_[0] === '--version') {
     const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version: string };
@@ -58,12 +60,16 @@ async function main(arguments_: string[]): Promise<void> {
   const oauth = new OAuthService(config);
 
   if (arguments_[0] === 'youtube-auth') {
-    process.stdout.write(`${JSON.stringify(await oauth.authorize())}\n`);
+    const authArguments = arguments_.slice(1);
+    if (authArguments.some((argument) => argument !== '--force')) {
+      throw new Error(usage);
+    }
+    process.stdout.write(`${JSON.stringify(await oauth.authorize({ force: authArguments.length > 0 }))}\n`);
     return;
   }
 
   if (arguments_[0] !== '--transport' || !arguments_[1]) {
-    throw new Error('Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth');
+    throw new Error(usage);
   }
 
   const client = new YouTubeClient(config);
@@ -119,7 +125,7 @@ async function main(arguments_: string[]): Promise<void> {
     await runHttp(createServer, { host: '127.0.0.1', port: parseHttpPort(process.env.PORT) });
     return;
   }
-  throw new Error('Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth');
+  throw new Error(usage);
 }
 
 function selectedCreatorProfile(config: AppConfig): { id: string; purpose: 'creator'; channelId: string } {
