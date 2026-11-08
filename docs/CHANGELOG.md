@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.3]
+
 ### Added
 - `youtube_reset_consumption_data` accepts `includeWatchEvents`, `watchedFrom` and `watchedTo` to delete imported local watch events (all, or an inclusive day range) together with the curation data in one transaction. The result gains `deleted.watchEvents`. Without these options behaviour is unchanged and watch events are kept.
 
