@@ -36,7 +36,7 @@ describe('published package artifact', () => {
 
       expect(result).toEqual({
         code: 1,
-        stderr: 'Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth\n',
+        stderr: 'Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth [--force]\n',
       });
     } finally {
       await rm(directory, { recursive: true, force: true });

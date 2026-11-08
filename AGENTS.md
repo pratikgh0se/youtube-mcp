@@ -12,7 +12,7 @@ Every client config uses the same launch. Only the file format around it changes
 
 ```
 command: npx
-args:    ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz", "--transport", "stdio"]
+args:    ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.3/youtube-mcp-0.3.3.tgz", "--transport", "stdio"]
 ```
 
 No npm publish is involved. `npx` downloads the prebuilt release tarball attached to the GitHub release (a few seconds on first run), then uses npm's cache. The release must exist: the URL returns 404 until the tag is published.
@@ -32,15 +32,17 @@ An empty string counts as unset for all five.
 ### Steps
 
 1. Write the server entry into the client's config using the matching file in [`configs/`](configs). Do not invent another format.
-2. Prewarm so the client does not time out on first start: `npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz --version`
+2. Prewarm so the client does not time out on first start: `npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.3/youtube-mcp-0.3.3.tgz --version`
 3. Restart or reload the client and confirm the `youtube-mcp` server lists its tools.
 4. For account and creator tools, run the one-time Google sign-in in a terminal with the same env values. It opens a browser:
 
 ```bash
 YOUTUBE_OAUTH_CLIENT_SECRET_FILE=/absolute/path/to/client_secret.json \
 YOUTUBE_MCP_PROFILE_ID=creator-main \
-npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz youtube-auth
+npx -y https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.3/youtube-mcp-0.3.3.tgz youtube-auth
 ```
+
+Re-running `youtube-auth` recovers an expired sign-in; add `--force` to always re-authorize.
 
 ### Which config file
 

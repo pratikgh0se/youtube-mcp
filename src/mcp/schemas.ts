@@ -204,7 +204,12 @@ export const curationCandidateSchema = z.object({
   apiFetchedAt: z.string().datetime().optional().describe('ISO 8601 time the video data was fetched from the YouTube API.'),
 });
 export const proposeConsumptionQueueSchema = z.object({ minutes: z.number().positive().max(24 * 60).describe('Time budget in minutes, greater than 0 and at most 1440.') });
-export const resetConsumptionDataSchema = z.object({ confirm: z.boolean().optional().describe('Must be true to delete the local consumption data; set it only after the user approved.') });
+export const resetConsumptionDataSchema = z.object({
+  confirm: z.boolean().optional().describe('Must be true to delete the local consumption data; set it only after the user approved.'),
+  includeWatchEvents: z.boolean().optional().describe('Set true to also delete imported watch events (local watch history). Not per profile: affects every profile sharing the state directory. Irreversible; without watchedFrom/watchedTo it deletes all of them.'),
+  watchedFrom: z.string().optional().describe('Only with includeWatchEvents: delete events from the start of this day (YYYY-MM-DD, inclusive).'),
+  watchedTo: z.string().optional().describe('Only with includeWatchEvents: delete events through the end of this day (YYYY-MM-DD, inclusive).'),
+});
 
 export const preflightUpdateChannelSchema = z.object({
   description: z.string().max(1_000).optional().describe('New channel description, up to 1000 characters.'),

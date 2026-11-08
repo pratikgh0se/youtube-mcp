@@ -42,7 +42,10 @@ export type ConsumptionQueue = {
   state: 'proposed' | 'applied';
 };
 
-export type CurationResetResult = { profileId: string; deleted: { policies: number; candidates: number; queues: number } };
+export type CurationResetResult = { profileId: string; deleted: { policies: number; candidates: number; queues: number; watchEvents?: number } };
+
+/** ISO bounds for deleting watch events: `start` inclusive, `endExclusive` exclusive; an omitted bound is open. */
+export type WatchEventDeleteRange = { start?: string; endExclusive?: string };
 
 type PolicyRow = { profileId: string; allowedSources: string; retentionDays: number };
 type CandidateRow = Omit<CurationCandidate, 'reason' | 'estimatedMinutes' | 'apiFetchedAt' | 'apiExpiresAt'> & {
@@ -173,7 +176,8 @@ export class CurationStore {
     this.ready().prepare(`UPDATE consumption_queues SET state = 'applied' WHERE queue_id = @queueId`).run({ queueId });
   }
 
-  reset(profileId: string): CurationResetResult {
+  /** Deletes selected-profile curation data and, when `watchEvents` is given, matching watch events, all in one transaction on this connection. */
+  reset(profileId: string, watchEvents?: WatchEventDeleteRange): CurationResetResult {
     const database = this.ready();
     return database.transaction(() => ({
       profileId,
@@ -181,8 +185,23 @@ export class CurationStore {
         queues: database.prepare('DELETE FROM consumption_queues WHERE profile_id = ?').run(profileId).changes,
         candidates: database.prepare('DELETE FROM curation_candidates WHERE profile_id = ?').run(profileId).changes,
         policies: database.prepare('DELETE FROM curation_policies WHERE profile_id = ?').run(profileId).changes,
+        ...(watchEvents ? { watchEvents: this.deleteWatchEvents(database, watchEvents) } : {}),
       },
     }));
+  }
+
+  private deleteWatchEvents(database: SqliteDatabase, range: WatchEventDeleteRange): number {
+    // The table belongs to ConsumptionStore and may not exist yet if nothing was ever imported.
+    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'watch_events'").get()) return 0;
+    const clauses = [
+      ...(range.start === undefined ? [] : ['watched_at >= @start']),
+      ...(range.endExclusive === undefined ? [] : ['watched_at < @end']),
+    ];
+    const parameters = {
+      ...(range.start === undefined ? {} : { start: range.start }),
+      ...(range.endExclusive === undefined ? {} : { end: range.endExclusive }),
+    };
+    return database.prepare(`DELETE FROM watch_events${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''}`).run(parameters).changes;
   }
 
   private ready(): SqliteDatabase {

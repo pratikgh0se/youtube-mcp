@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.3]
+
+### Added
+- `youtube_reset_consumption_data` accepts `includeWatchEvents`, `watchedFrom` and `watchedTo` to delete imported local watch events (all, or an inclusive day range) together with the curation data in one transaction. The result gains `deleted.watchEvents`. Without these options behaviour is unchanged and watch events are kept.
+
+### Fixed
+- `youtube-auth` now verifies a stored sign-in with Google instead of reporting `authorized: true` for a dead refresh token. If the token was revoked or expired (for example after 7 days in Testing mode) it opens the browser and replaces it. If Google cannot be reached it fails with a retry message and leaves the token untouched. New `youtube-auth --force` always runs the browser flow; other arguments are a usage error.
+
 ## [0.3.2]
 
 ### Fixed

@@ -1,7 +1,7 @@
 # Codex does not expand variable placeholders. env_vars forwards these from the shell that starts Codex.
 [mcp_servers.youtube-mcp]
 command = "npx"
-args = ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz", "--transport", "stdio"]
+args = ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.3/youtube-mcp-0.3.3.tgz", "--transport", "stdio"]
 env_vars = ["YOUTUBE_API_KEY", "YOUTUBE_OAUTH_CLIENT_SECRET_FILE", "YOUTUBE_MCP_PROFILE_ID", "YOUTUBE_MCP_CHANNEL_ID"]
 # The first npx run downloads the prebuilt release tarball (a few seconds). Codex's default startup timeout of 10 seconds can be too short on a slow connection.
 startup_timeout_sec = 180

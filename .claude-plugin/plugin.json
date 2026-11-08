@@ -1,7 +1,7 @@
 {
   "name": "youtube-mcp",
   "displayName": "YouTube MCP",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Search YouTube, manage your channel and read your analytics from your AI assistant. Every change to your account is previewed and needs your approval first.",
   "author": {
     "name": "Pratik Ghose",
@@ -14,7 +14,7 @@
   "mcpServers": {
     "youtube-mcp": {
       "command": "npx",
-      "args": ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.2/youtube-mcp-0.3.2.tgz", "--transport", "stdio"],
+      "args": ["-y", "https://github.com/pratikgh0se/youtube-mcp/releases/download/v0.3.3/youtube-mcp-0.3.3.tgz", "--transport", "stdio"],
       "env": {
         "YOUTUBE_API_KEY": "${user_config.YOUTUBE_API_KEY}",
         "YOUTUBE_OAUTH_CLIENT_SECRET_FILE": "${user_config.YOUTUBE_OAUTH_CLIENT_SECRET_FILE}",

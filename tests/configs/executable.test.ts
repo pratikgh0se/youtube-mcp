@@ -13,7 +13,7 @@ describe('youtube-mcp package executable', () => {
     expect(executable).toBe('./bin/youtube-mcp.mjs');
     await expect(run(process.execPath, [executable!, '--transport', 'unsupported'])).resolves.toEqual({
       code: 1,
-      stderr: 'Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth\n',
+      stderr: 'Usage: youtube-mcp --transport stdio|http | youtube-mcp youtube-auth [--force]\n',
     });
   }, 15_000);
 });

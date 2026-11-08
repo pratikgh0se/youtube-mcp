@@ -21,7 +21,7 @@
 // BLOCKED (YouTube refused for an account-level reason), SKIPPED (optional input missing), FAIL.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -134,9 +134,11 @@ const client = new Client({ name: 'youtube-mcp-live-e2e', version: '0.1.0' });
 let quotaAborted = false;
 
 /** Raw MCP call: parses JSON, tallies quota, throws E2EError carrying the server's safe error code. */
-async function call(name, args = {}, timeout = 120_000) {
+async function call(name, args = {}, timeout = 120_000, via = client) {
+  // Structural guard: watch-event deletion may only ever reach an isolated (temporary state dir) server.
+  if (args.includeWatchEvents !== undefined && via === client) throw new E2EError('includeWatchEvents must not be sent to the main client.', 'unsafe_call', name);
   if (quotaAborted) throw new E2EError('Run aborted (quota exhausted).', 'quota_exhausted', name);
-  const result = await client.callTool({ name, arguments: args }, undefined, { timeout });
+  const result = await via.callTool({ name, arguments: args }, undefined, { timeout });
   const text = result.content?.find((entry) => entry.type === 'text')?.text ?? '';
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = undefined; }
@@ -160,12 +162,12 @@ async function call(name, args = {}, timeout = 120_000) {
  * One tool call, optionally retried (for YouTube read-after-write lag), recorded once at the end.
  * Throws E2EError on failure so the enclosing group stops.
  */
-async function step(tool, args, { check, blocked, timeout, attempts = 1, delayMs = 3_000 } = {}) {
+async function step(tool, args, { check, blocked, timeout, attempts = 1, delayMs = 3_000, via } = {}) {
   const started = Date.now();
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const value = await call(tool, args, timeout);
+      const value = await call(tool, args, timeout, via);
       const problem = check?.(value);
       if (problem) throw new E2EError(`unexpected response: ${problem}`, 'unexpected_response', tool);
       record(tool, 'PASS', Date.now() - started);
@@ -1113,6 +1115,23 @@ async function viewerGroup() {
 }
 
 async function watchHistoryGroup() {
+  // Isolated: a second server on a fresh temporary state dir, so synthetic events never touch the real history.
+  // Every call below goes through `iso`/`isoStep`; the main `client` is not referenced in this function.
+  const isoStateDir = await mkdtemp(join(tmpdir(), 'youtube-mcp-e2e-state-'));
+  const iso = new Client({ name: 'youtube-mcp-live-e2e-isolated', version: '0.1.0' });
+  const isoTransport = new StdioClientTransport({ command: process.execPath, args: ['dist/index.js', '--transport', 'stdio'], stderr: 'pipe', env: { ...process.env, YOUTUBE_MCP_STATE_DIR: isoStateDir } });
+  const isoCall = (tool, args = {}) => call(tool, args, undefined, iso);
+  const isoStep = (tool, args, options = {}) => step(tool, args, { ...options, via: iso });
+  try {
+    await iso.connect(isoTransport);
+    await watchHistoryChecks(isoCall, isoStep);
+  } finally {
+    await iso.close().catch(() => undefined);
+    await rm(isoStateDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function watchHistoryChecks(isoCall, isoStep) {
   let inputPath = takeoutOverride;
   let range = { startDate: '2020-03-01', endDate: '2020-03-20' };
   let trends = { baselineStartDate: '2020-03-01', baselineEndDate: '2020-03-10', comparisonStartDate: '2020-03-11', comparisonEndDate: '2020-03-20' };
@@ -1135,32 +1154,61 @@ async function watchHistoryGroup() {
   }
   const minWatches = takeoutOverride ? 0 : 4;
 
-  await step('youtube_import_takeout', { inputPath }, { check: (v) => (v.imported >= 0 && v.imported + v.skipped >= 1 ? undefined : `imported ${v.imported}, skipped ${v.skipped}`) });
-  await step('youtube_consumption_profile', range, { check: (v) => (v.totalWatchCount >= minWatches ? undefined : `totalWatchCount ${v.totalWatchCount}`) });
-  await step('youtube_consumption_trends', trends, { check: (v) => (v && typeof v === 'object' ? undefined : 'malformed') });
+  await isoStep('youtube_import_takeout', { inputPath }, { check: (v) => (v.imported >= 0 && v.imported + v.skipped >= 1 ? undefined : `imported ${v.imported}, skipped ${v.skipped}`) });
+  await isoStep('youtube_consumption_profile', range, { check: (v) => (v.totalWatchCount >= minWatches ? undefined : `totalWatchCount ${v.totalWatchCount}`) });
+  await isoStep('youtube_consumption_trends', trends, { check: (v) => (v && typeof v === 'object' ? undefined : 'malformed') });
 
-  await step('youtube_save_curation_policy', { allowedSources: ['e2e-source'], retentionDays: 7 }, { check: (v) => (v.allowedSources?.includes('e2e-source') ? undefined : 'policy not echoed') });
-  await step('youtube_save_curation_candidate', {
+  await isoStep('youtube_save_curation_policy', { allowedSources: ['e2e-source'], retentionDays: 7 }, { check: (v) => (v.allowedSources?.includes('e2e-source') ? undefined : 'policy not echoed') });
+  await isoStep('youtube_save_curation_candidate', {
     videoId: state.publicVideoId, source: 'allowlist', sourceId: 'e2e-source', title: 'E2E candidate', reason: 'live e2e', estimatedMinutes: 5, apiFetchedAt: new Date().toISOString(),
   }, { check: (v) => (v.videoId === state.publicVideoId ? undefined : 'candidate not echoed') });
-  await step('youtube_propose_consumption_queue', { minutes: 10 }, { check: (v) => (v.items?.length >= 1 ? undefined : 'queue has no items') });
+  await isoStep('youtube_propose_consumption_queue', { minutes: 10 }, { check: (v) => (v.items?.length >= 1 ? undefined : 'queue has no items') });
 
   // Reset needs confirm: true; without it the server must refuse.
   const started = Date.now();
   let refused = false;
-  try { await call('youtube_reset_consumption_data', {}); } catch (error) { refused = error.code === 'confirmation_required'; }
+  try { await isoCall('youtube_reset_consumption_data', {}); } catch (error) { refused = error.code === 'confirmation_required'; }
   if (!refused) {
     record('youtube_reset_consumption_data', 'FAIL', Date.now() - started, 'reset without confirm was not refused with confirmation_required');
     return;
   }
-  await step('youtube_reset_consumption_data', { confirm: true }, { check: (v) => (v.deleted?.policies >= 1 ? undefined : `deleted ${JSON.stringify(v.deleted)}`) });
+  await isoStep('youtube_reset_consumption_data', { confirm: true }, { check: (v) => (v.deleted?.policies >= 1 && !('watchEvents' in v.deleted) ? undefined : `deleted ${JSON.stringify(v.deleted)}`) });
   // Verify the reset: with the policy gone, proposing a queue must be refused.
   try {
-    await call('youtube_propose_consumption_queue', { minutes: 10 });
+    await isoCall('youtube_propose_consumption_queue', { minutes: 10 });
     record('youtube_reset_consumption_data', 'FAIL', 0, 'policy still present after reset');
   } catch (error) {
     if (error.code !== 'curation_policy_not_found') record('youtube_reset_consumption_data', 'FAIL', 0, `unexpected post-reset error ${error.code}`);
   }
+  // The default reset must have kept the watch events.
+  await isoStep('youtube_consumption_profile', range, { check: (v) => (v.totalWatchCount >= minWatches ? undefined : `watch events lost by a curation-only reset: ${v.totalWatchCount}`) });
+
+  // New option, isolated state dir only. Confirm-less preview must refuse, name the scope, and delete nothing.
+  const scoped = { includeWatchEvents: true, watchedFrom: '2020-03-01', watchedTo: '2020-03-10' };
+  const expectPreview = async (args, needle) => {
+    try {
+      await isoCall('youtube_reset_consumption_data', args);
+    } catch (error) {
+      if (error.code === 'confirmation_required' && error.message.includes(needle)) return;
+      throw new E2EError(`unexpected preview error ${error.code}: ${error.message}`, 'unexpected_response', 'youtube_reset_consumption_data');
+    }
+    throw new E2EError('reset with includeWatchEvents and no confirm was not refused', 'unexpected_response', 'youtube_reset_consumption_data');
+  };
+  try {
+    await expectPreview(scoped, '2020-03-01 through 2020-03-10');
+    await expectPreview({ includeWatchEvents: true }, 'all watch history');
+  } catch (error) {
+    record('youtube_reset_consumption_data', 'FAIL', 0, error.message);
+    return;
+  }
+  await isoStep('youtube_consumption_profile', range, { check: (v) => (v.totalWatchCount >= minWatches ? undefined : 'preview deleted watch events') });
+
+  // Date-scoped delete: 2020-03-02 and 2020-03-04 only (synthetic data), the rest stays.
+  await isoStep('youtube_reset_consumption_data', { ...scoped, confirm: true }, { check: (v) => (takeoutOverride ? (v.deleted?.watchEvents >= 0 ? undefined : 'no watchEvents count') : (v.deleted?.watchEvents === 2 ? undefined : `scoped delete count ${JSON.stringify(v.deleted)}`)) });
+  if (!takeoutOverride) await isoStep('youtube_consumption_profile', range, { check: (v) => (v.totalWatchCount === 2 && v.searchCount === 1 ? undefined : `after scoped delete watch ${v.totalWatchCount}, search ${v.searchCount}`) });
+  // Unscoped delete: the remaining 3 events (2 watches + 1 search).
+  await isoStep('youtube_reset_consumption_data', { includeWatchEvents: true, confirm: true }, { check: (v) => (takeoutOverride ? (v.deleted?.watchEvents >= 0 ? undefined : 'no watchEvents count') : (v.deleted?.watchEvents === 3 ? undefined : `unscoped delete count ${JSON.stringify(v.deleted)}`)) });
+  await isoStep('youtube_consumption_profile', range, { check: (v) => (v.totalActivityCount === 0 ? undefined : `events remain after unscoped delete: ${v.totalActivityCount}`) });
 }
 
 // ---------------------------------------------------------------------------------------------

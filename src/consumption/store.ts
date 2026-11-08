@@ -307,7 +307,7 @@ function queryParameters(range: ConsumptionDateRange): { start: string; end: str
   return { start: bounds.start, end: bounds.endExclusive };
 }
 
-function dateBounds(range: ConsumptionDateRange): { start: string; endExclusive: string } {
+export function dateBounds(range: ConsumptionDateRange): { start: string; endExclusive: string } {
   const start = parseDate(range.startDate);
   const end = parseDate(range.endDate);
   if (start.getTime() > end.getTime()) {
